@@ -117,7 +117,7 @@ private struct OrderVectors: Decodable {
 }
 
 /// push-vectors.json: tools/push-vectors.py, the records from the SDK's own widget_record and columns_record.
-private struct PushVectors: Decodable {
+struct PushVectors: Decodable {
     struct W: Decodable { let title: String; let value: String; let hex: String }
     struct P: Decodable { let slot: Int; let kind: Int; let data: String; let hex: String }
     struct R: Decodable { let hex: String; let ok: Bool?; let later_ms: UInt32?; let refused: UInt8? }
@@ -128,6 +128,11 @@ private struct PushVectors: Decodable {
     struct Damage: Decodable { let note: String; let flip: Int?; let keep: Int? }
     struct Trailer: Decodable { let stub: UInt32; let package: String; let plain: String; let damaged: [Damage] }
     let trailer: Trailer
+    struct Card: Decodable {
+        let note: String; let at: String; let start: String
+        let now: [Double]?; let hours: [[Double]]; let hex: String?
+    }
+    let weather_icons: [[Int]]; let weather_cards: [Card]
     let command: Int; let widget: [W]; let payload: [P]; let replies: [R]; let blob: [B]; let http_widget: [H]
     let columns_stub: UInt32; let columns: [Columns]; let columns_bad: [[C]]
 

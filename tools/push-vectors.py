@@ -37,6 +37,45 @@ for c in bad_columns:
     raise SystemExit(f"columns_record took {c}")
 card = install.columns_record(GOLDEN)
 
+# Weather's card (docs/miniapp-rpc.md): the forecast's hourly entries from `start`, one per hour, as (temp, WMO code),
+# and the current one, seen at `at` on the phone's clock. The expected columns are the contract's, the bytes the SDK's.
+D = "\u00b0"
+DAY = [(h, 3) for h in range(26)]
+cards = [
+    ("golden: past midnight", "2026-11-22T22:40", "2026-11-22T22:00", (-2.5, 73),
+     [(-2.0, 3), (-3.5, 3), (-5.4, 0), (-0.4, 95), (4, 1)], GOLDEN),
+    ("the last hour of the day", "2026-12-31T23:59", "2026-12-31T23:00", (1, 0),
+     [(1, 0), (2, 1), (3, 45), (4, 51)],
+     [("Now", 0, "1" + D), ("00:00", 1, "2" + D), ("01:00", 3, "3" + D), ("02:00", 4, "4" + D)]),
+    ("zero-padded, on the hour itself", "2026-11-22T07:00", "2026-11-22T07:00", (7, 2), DAY,
+     [("Now", 1, "7" + D), ("08:00", 2, "1" + D), ("09:00", 2, "2" + D), ("10:00", 2, "3" + D)]),
+    ("a stale cache counts from the phone's clock", "2026-11-22T10:15", "2026-11-22T06:00", (12.3, 61), DAY,
+     [("Now", 5, "12" + D), ("11:00", 2, "5" + D), ("12:00", 2, "6" + D), ("13:00", 2, "7" + D)]),
+    ("a stale cache from yesterday", "2026-11-23T01:05", "2026-11-22T21:00", (0, 0), DAY,
+     [("Now", 0, "0" + D), ("02:00", 2, "5" + D), ("03:00", 2, "6" + D), ("04:00", 2, "7" + D)]),
+    ("three columns", "2026-11-22T22:10", "2026-11-22T22:00", (3, 80), [(3, 80), (2, 85), (1, 99)],
+     [("Now", 5, "3" + D), ("23:00", 6, "2" + D), ("00:00", 7, "1" + D)]),
+    ("two, the end of a stale cache", "2026-11-22T12:30", "2026-11-22T10:00", (3, 4), [(5, 0), (6, 0), (7, 0), (8, 0)],
+     [("Now", 2, "3" + D), ("13:00", 0, "8" + D)]),
+    ("only this hour is known", "2026-11-22T12:30", "2026-11-22T12:00", (3, 4), [(9, 0)], [("Now", 2, "3" + D)]),
+    ("every hour has passed", "2026-11-23T12:30", "2026-11-22T10:00", (3, 4), [(5, 0), (6, 0)], [("Now", 2, "3" + D)]),
+    ("no hours", "2026-11-22T12:30", "2026-11-22T12:00", (3, 4), [], [("Now", 2, "3" + D)]),
+    ("now -0.4, hours -0.5 -1.5 2.5", "2026-11-22T12:30", "2026-11-22T12:00", (-0.4, 1),
+     [(0, 0), (-0.5, 0), (-1.5, 0), (2.5, 0)],
+     [("Now", 1, "0" + D), ("13:00", 0, "-1" + D), ("14:00", 0, "-2" + D), ("15:00", 0, "3" + D)]),
+    ("now -0.5", "2026-11-22T12:30", "2026-11-22T12:00", (-0.5, 0), [], [("Now", 0, "-1" + D)]),
+    ("now -0.04 is never -0", "2026-11-22T12:30", "2026-11-22T12:00", (-0.04, 0), [], [("Now", 0, "0" + D)]),
+    ("now -0.25: -0.3 is 0", "2026-11-22T12:30", "2026-11-22T12:00", (-0.25, 0), [], [("Now", 0, "0" + D)]),
+    ("now -0.46 is -0.5 on the wire", "2026-11-22T12:30", "2026-11-22T12:00", (-0.46, 0), [], [("Now", 0, "-1" + D)]),
+    ("now 2.46 is 2.5 on the wire", "2026-11-22T12:30", "2026-11-22T12:00", (2.46, 0), [], [("Now", 0, "3" + D)]),
+    ("an hour's temperature is an i8", "2026-11-22T12:30", "2026-11-22T12:00", (-40, 0), [(0, 0), (-200, 0), (200, 0)],
+     [("Now", 0, "-40" + D), ("13:00", 0, "-128" + D), ("14:00", 0, "127" + D)]),
+    ("no current weather: nothing to write", "2026-11-22T12:30", "2026-11-22T12:00", None, [(1, 0), (2, 0)], None),
+]
+# model::Icon of Weather, by WMO code: both ends of every range and their neighbours
+icons = {0: [0], 1: [1, 2], 3: [45, 48], 4: [51, 53, 57], 5: [61, 67, 80, 82], 6: [71, 77, 85, 86], 7: [95, 96, 99],
+         2: [3, 4, 44, 46, 47, 49, 50, 58, 60, 68, 70, 78, 79, 83, 84, 87, 94, 100, 255]}
+
 # an app with widget icons (docs/app-icons.md): stub 9 gets it whole, an older one without the trailer
 image = bytes(range(256)) + bytes(44)
 fields = {"name": "weather", "version": 7, "relocs": [4, 8], "abi_minor": 1}
@@ -76,6 +115,10 @@ out = {
     "columns_bad": [named(c) for c in bad_columns],
     "replies": [{"hex": "00", "ok": True}, {"hex": "0a60ea0000", "later_ms": 60000}, {"hex": "07", "refused": 7},
                 {"hex": "01", "refused": 1}, {"hex": "02", "refused": 2}, {"hex": "", "refused": 255}],
+    "weather_icons": sorted([code, index] for index, codes in icons.items() for code in codes),
+    "weather_cards": [{"note": note, "at": at, "start": start, "now": now, "hours": hours,
+                       "hex": install.columns_record(want).hex() if want else None}
+                      for note, at, start, now, hours, want in cards],
     "trailer": {"stub": package.STUB_TRAILER, "package": packed.hex(), "plain": plain.hex(), "damaged": damaged},
     "blob": blob_records,
     "http_widget": [
