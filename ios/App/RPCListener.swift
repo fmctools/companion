@@ -33,17 +33,16 @@ actor KLock {
 @MainActor final class RPCListener {
     static let shared = RPCListener()
     private var task: Task<Void, Never>?
-    /// An install, a face or a firmware update has the watch: off until it starts us again, whatever a check reads.
-    private var stopped = false
+    private var holds = WatchHolds()
     private var link: BLELink?
     /// slot → package name, from INFO
     private var apps: [Int: String] = [:]
     /// The stub's release, from the same read: PUSH needs 8, Weather's card 9.
     private var stub: UInt32 = 1
 
+    /// Nothing while an install, a face or a firmware update has the watch (`stop`), whoever asks.
     func start() {
-        stopped = false
-        guard task == nil else { return }
+        guard task == nil, holds.free else { return }
         task = Task {
             while !Task.isCancelled {
                 let stock = await listen()
@@ -52,12 +51,18 @@ actor KLock {
         }
     }
 
+    /// Off until each `stop` has had its `resume`.
     func stop() {
-        stopped = true
+        holds.take()
         task?.cancel()
         task = nil
         link?.disconnect()
         link = nil
+    }
+
+    func resume() {
+        holds.release()
+        start()
     }
 
     /// What WatchModel.check read: the apps by slot, and a loader on a watch that had none.
@@ -65,7 +70,7 @@ actor KLock {
         guard let state else { return }
         apps = state.apps.mapValues(\.name)
         stub = state.stub.version
-        if task == nil, !stopped { start() }
+        if task == nil { start() }
     }
 
     /// true: stock firmware, nothing to listen to.

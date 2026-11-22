@@ -9,7 +9,9 @@ sys.path.insert(0, os.path.join(os.path.expanduser(os.environ.get("CMF_SDK", "~/
 from wp2apps import install, package  # noqa: E402
 
 widgets = [("USD", "92.41"), ("Погода в Москве сегодня", "−3° снег, ветер 5 м/с\nзавтра −7°"), ("", ""),
-           ("A title of exactly 23 b", "a value that is longer than thirty-nine bytes for sure")]
+           ("A title of exactly 23 b", "a value that is longer than thirty-nine bytes for sure"),
+           # cut between code points, not graphemes: the accent and the LF go, what they follow stays
+           ("1234567890123456789012e\u0301", "x" * 38 + "\r\n")]
 GOLDEN = [("Now", 6, "-3\u00b0"), ("23:00", 2, "-4\u00b0"), ("00:00", 0, "-5\u00b0"), ("01:00", 7, "0\u00b0")]
 columns = [
     ("golden, four columns", GOLDEN),

@@ -327,7 +327,7 @@ suspend fun kRun(context: Context, model: AppModel, body: suspend (KSession) -> 
     val link = BleLink(context)
     WatchLink.using.incrementAndGet()
     try {
-        // a full app with 16 widget icons is about 210 KB, so some 1650 requests
+        // the stub takes a package of up to 256 KB: some 2050 requests, over two minutes at 60 ms each
         withTimeout(240_000) {
             link.connect()
             // ponytail: K read fresh each time (a few seconds) rather than trying the cached one first
