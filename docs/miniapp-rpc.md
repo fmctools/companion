@@ -375,7 +375,53 @@ The app's page lists its jobs ("Every 30 min: GET api.example.com/rate") with a 
 Delete from the Watch delete them.
 
 `PUSH` itself, from the phone (`Push.swift` / `wire/Push.kt`): `slot ‖ kind ‖ data`, reply `00` ok, `0A ‖ wait:u32`
-later, `07` no app in that slot, `01` bad request or a stub before 8, `02` NAND write failed.
+later, `07` no app in that slot, `01` bad request or a stub before 8, `02` NAND write failed. `kind` 0 takes a v1
+record of exactly 64 bytes and, from stub 9, a v2 record of up to 128 (short ones too); an older stub answers `01` to
+v2, so the phone reads the stub's version first.
+
+#### Weather's card
+
+The one card the phone writes by itself, with no job: the store's Weather (package `weather`) shows now and the next
+three hours (`WeatherCard.swift` / `wire/WeatherCard.kt`; `weather_cards`, `weather_icons` and `columns` in
+`push-vectors.json`, their bytes from the SDK's `install.columns_record`). The watch app writes the same card: the
+same forecast at the same hour gives the same bytes on both, and the last write wins.
+
+Only when all hold: stub 9 or later, `weather` in one of slots 0–15, that package has the `weather` grant and its OS
+permission is on. Else nothing is written, never a v1 text card in its place: it would replace the app's own.
+
+```
+FF ‖ 01 ‖ n:u8 ‖ n × (caption[10] ‖ icon:u8 ‖ value[10])        n 1–4; 24, 45, 66 or 87 bytes
+```
+
+Both text fields are UTF-8, at most 9 bytes cut at a code point, NUL-padded. The columns are built from the records
+`weather` answers (`0x30`):
+
+| Column | Caption | Value and icon from |
+|---|---|---|
+| first | `Now` | the current record: `temp` (0.1°) rounded to a whole degree, halves away from zero, never `-0`; its `code` |
+| up to three more | `HH:00`, 24 h, zero-padded, wraps at midnight | the hourly entries after the one of the hour that contains now: `temp`, `code` |
+
+The value is the integer and `°` (`C2 B0`), no unit; the stub draws its own glyph for it. Hours count on the phone's
+clock: a stale forecast drops the hours that passed, and fewer known hours give fewer columns. No current record:
+nothing is written.
+
+`icon` is an index into Weather's package icons (the `WP2W` trailer), in the order of Weather's `model::Icon`. It is a
+contract with that package, so the order never changes; there are no night variants.
+
+| Index | Icon | WMO codes |
+|---|---|---|
+| 0 | clear | 0 |
+| 1 | partly | 1, 2 |
+| 2 | cloud | anything not listed here |
+| 3 | fog | 45, 48 |
+| 4 | drizzle | 51–57 |
+| 5 | rain | 61–67, 80–82 |
+| 6 | snow | 71–77, 85, 86 |
+| 7 | storm | 95–99 |
+
+When: once the link is up, then when the hour changes. The same bytes aren't sent twice in a session (a new session
+sends once; the stub doesn't write what it already has). After a write the next waits 60 s, after a `Later` the time it
+names; with no forecast or a refused push it is tried again in 5 min.
 
 When they run: on Android in the foreground service's loop (`RpcService`, at least once a minute); on iOS in
 `RPCListener`'s loop, while the app is in the foreground or woken by BLE (about 10 s). iOS has no BGAppRefreshTask

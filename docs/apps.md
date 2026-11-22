@@ -19,6 +19,7 @@ Android, under `android/app/src/main/java/tools/fmc/companion/`:
 | `Services.kt` | The services: calendar, location, weather, notifications, http |
 | `Grants.kt` | What the user allowed per app, and the "app wants X" notification |
 | `Apps.kt` | The Apps tab, an app's page, store names and icons |
+| `wire/WeatherCard.kt` | Weather's widget card from the weather records, and when a session sends it |
 | `wire/Session.kt`, `wire/Frame.kt` | Session, encryption and frames under the RPC |
 | `BleLink.kt` | GATT client on the link Nothing X already holds. Not tested on a real watch yet (FMC-9) |
 
@@ -47,6 +48,36 @@ feature) can't carry the order: it stays on the phone.
 The stub has 8 app slots before version 8 and 16 from it (`appSlots(stub:)` in WireKit, `appSlots` in the Android
 wire). The version is INFO on slot `0xFE`; `readLoader`, `installed` and `install` read that many.
 
+## Widget icons in packages
+
+An app may carry the icons of its widget card in a `WP2W` trailer after the relocation table (cmf-watch-sdk
+`docs/app-icons.md`, "Widget icons"). `body_crc` and the header don't count it, so the 64-byte header the Apps tab
+reads says the same with and without icons. `install` (WireKit, the Android wire) reads the stub first:
+
+- stub 9 or later gets the file as it is. The stub checks the trailer's own CRC; with a damaged one the app installs
+  without icons, so the phone doesn't check it too.
+- an older stub refuses any byte past the header's sizes, so it gets the file cut there: byte for byte the package
+  packed without icons, damaged trailer or not.
+
+A trailer adds up to 77 KB (16 icons of 4800 B).
+
+## Weather's card
+
+The companion keeps the widget card of the store's Weather app (package `weather`) fresh: now and the next three hours,
+as a `columns` record pushed to stub 9 or later. The record, the icon order and the gate are in
+[miniapp-rpc.md](miniapp-rpc.md), "Weather's card". On each platform:
+
+- It runs in the services' loop and only there: iOS `RPCListener` (in the foreground and in the wakes it gets anyway),
+  Android `RpcService` (so only with the services switched on). On connect, then when the hour changes: iOS sees that
+  within 5 s while it runs, Android within a minute.
+- It uses the forecast cached for the `weather` service. An expired one is fetched for the phone's last known location:
+  the card never asks for a fix and never prompts. A forecast fetched for an old location that way isn't reused for
+  the app's own `weather` request, which takes a fix as before.
+- It stays out of installs, face and firmware sessions and the wait for a flashed watch to restart.
+- The slot and the stub come from one read per session. Reading again before each push would drop an install another
+  host has open (INFO does that; PUSH doesn't). So an app another host put into Weather's slot meanwhile would get
+  the card until the next reconnect; the companion's own installs restart the session.
+
 ## What the phone keeps for watch apps
 
 - Grants, pending asks and "Show text on the watch": `Permissions` (UserDefaults) / `Grants` (prefs "grants").
@@ -68,8 +99,8 @@ apps' GATT clients, so we connect next to Nothing X without a bind or a popup. W
 ourselves: `RPCListener` and the watch check in `WatchModel.check`.
 
 The catch is that replies don't carry a request id. Every session sees every reply, so requests have to go one at a
-time. On iOS `KLock` does that between our own sessions. Another host sending its own requests at the same moment can
-still take our reply, and nothing guards against that.
+time. `KLock` on iOS and `kLock` (`Watch.kt`) on Android do that between our own sessions. Another host sending its
+own requests at the same moment can still take our reply, and nothing guards against that.
 
 The watch is read again by itself in two cases. When the listener's link comes back after a drop (a restart, out of
 range), `WatchModel.linkCameBack` / `AppModel.linkCameBack` runs `check()`: not before the user's first read, not
