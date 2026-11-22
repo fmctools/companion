@@ -19,6 +19,8 @@ enum FaceInstallError: LocalizedError {
         case .refused(.screenOverBudget(let aod, let bytes)):
             aod ? String(localized: "The always-on screen of this face needs \(mb(bytes)) MB of the watch's memory, more than the \(mb(screenBudget)) MB a Watch 3 Pro holds: the watch would restart in a loop. Use fewer or smaller full-screen images in the editor on fmc.tools.")
                 : String(localized: "The main screen of this face needs \(mb(bytes)) MB of the watch's memory, more than the \(mb(screenBudget)) MB a Watch 3 Pro holds: the watch would restart in a loop. Use fewer or smaller full-screen images in the editor on fmc.tools.")
+        case .refused(.unmeasurable):
+            String(localized: "The app can't measure how much memory this face needs, and too much makes a Watch 3 Pro restart in a loop. Nothing was sent to the watch.")
         case .refused: String(localized: "This file is not a watch face.")
         case .full: String(localized: "The watch is full. Delete a face on the watch (long press the face, swipe one up) and try again.")
         case .noFile: String(localized: "This watch face has no file.")

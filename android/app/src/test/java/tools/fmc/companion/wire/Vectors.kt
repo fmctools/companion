@@ -15,6 +15,8 @@ object Vectors {
     val ota: JSONObject by lazy { load("ota-vectors.json") }
     /** Made by tools/face-fit-vectors.ts from the site's budget.ts, fit.ts, etc2.ts and bin.ts. */
     val fit: JSONObject by lazy { load("face-fit-vectors.json") }
+    /** Made by tools/face-gate-vectors.ts from the site's assertFlashable. */
+    val gate: JSONObject by lazy { load("face-gate-vectors.json") }
     /** Made by tools/rescue-vectors.ts from the site's Watch.authenticate, Watch.pair and Watch.factoryReset. */
     val rescue: JSONObject by lazy { load("rescue-vectors.json") }
 

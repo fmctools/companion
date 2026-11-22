@@ -57,6 +57,7 @@
     <string name="refusal_aod">The always-on screen of this face has no thumbnail. Faces like this made the screen flash on a watch. Open it in the editor on fmc.tools and install it from there.</string>
     <string name="refusal_image_too_big">An image of this face is %1$d×%2$d px. Over %3$d px can make the watch restart in a loop.</string>
     <string name="refusal_not_face">This file is not a watch face.</string>
+    <string name="refusal_unmeasurable">The app can\'t measure how much memory this face needs, and too much makes a Watch 3 Pro restart in a loop. Nothing was sent to the watch.</string>
     <string name="face_no_file">This watch face has no file.</string>
     <string name="face_slot">Face %1$d</string>
     <string name="watch_full_error">The watch is full. Delete a face on the watch (long press the face, swipe one up) and try again.</string>
