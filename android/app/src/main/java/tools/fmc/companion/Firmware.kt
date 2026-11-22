@@ -40,6 +40,7 @@ import androidx.lifecycle.viewModelScope
 import java.net.URLEncoder
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeout
 import org.json.JSONObject
 import tools.fmc.companion.wire.InstallError
@@ -328,9 +329,11 @@ suspend fun kRun(context: Context, model: AppModel, body: suspend (KSession) -> 
         withTimeout(120_000) {
             link.connect()
             // ponytail: K read fresh each time (a few seconds) rather than trying the cached one first
-            val (session, secret) = KSession.open(link, register = false)
-            model.store["k-${link.watchId}"] = secret
-            body(session)
+            kLock.withLock {
+                val (session, secret) = KSession.open(link, register = false)
+                model.store["k-${link.watchId}"] = secret
+                body(session)
+            }
         }
     } finally {
         link.disconnect()

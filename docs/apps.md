@@ -68,8 +68,8 @@ apps' GATT clients, so we connect next to Nothing X without a bind or a popup. W
 ourselves: `RPCListener` and the watch check in `WatchModel.check`.
 
 The catch is that replies don't carry a request id. Every session sees every reply, so requests have to go one at a
-time. On iOS `KLock` does that between our own sessions. Another host sending its own requests at the same moment can
-still take our reply, and nothing guards against that.
+time. `KLock` on iOS and `kLock` (`Watch.kt`) on Android do that between our own sessions. Another host sending its
+own requests at the same moment can still take our reply, and nothing guards against that.
 
 The watch is read again by itself in two cases. When the listener's link comes back after a drop (a restart, out of
 range), `WatchModel.linkCameBack` / `AppModel.linkCameBack` runs `check()`: not before the user's first read, not

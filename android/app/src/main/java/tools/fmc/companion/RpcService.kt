@@ -19,6 +19,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.withLock
 import tools.fmc.companion.wire.Cmd
 import tools.fmc.companion.wire.KSession
 import tools.fmc.companion.wire.Status
@@ -86,11 +87,13 @@ class RpcService : Service() {
             try {
                 link.connect()
                 val account = "k-${link.watchId}"
-                val session = try {
-                    KSession.open(link, store[account] ?: throw WireError.Timeout("no cached K")).first
-                } catch (e: WireError) {
-                    // K changes with a factory reset: read it again
-                    KSession.open(link).also { store[account] = it.second }.first
+                val session = kLock.withLock {
+                    try {
+                        KSession.open(link, store[account] ?: throw WireError.Timeout("no cached K")).first
+                    } catch (e: WireError) {
+                        // K changes with a factory reset: read it again
+                        KSession.open(link).also { store[account] = it.second }.first
+                    }
                 }
                 Log.i(TAG, "listening")
                 DevLog.log(this, "listening")
@@ -119,16 +122,16 @@ class RpcService : Service() {
             val (slot, m) = try {
                 s.recvFrom(60_000)
             } catch (_: WireError.Timeout) {
-                s.ping() // registers again (a rebooted watch forgets us) and throws on a dead link
+                kLock.withLock { s.ping() } // registers again (a rebooted watch forgets us) and throws on a dead link
                 continue
             }
             if (parseRequest(m) == null) continue
-            val pkg = names[slot] ?: packageIn(s, slot)?.also { names[slot] = it } ?: continue
+            val pkg = names[slot] ?: kLock.withLock { packageIn(s, slot) }?.also { names[slot] = it } ?: continue
             // empty: a part of http.request before its last
             val replies = answer(pkg, m, phone)?.takeIf { it.isNotEmpty() } ?: continue
             val line = DevLog.request(pkg, m, replies)
             try {
-                for (r in replies) s.send(r)
+                kLock.withLock { for (r in replies) s.send(r) }
                 DevLog.log(this, "$line, ${replies.size} msg")
             } catch (e: WireError) {
                 Log.w(TAG, "reply to $pkg: ${e.message}") // the app closed meanwhile
@@ -152,7 +155,7 @@ class RpcService : Service() {
                 DevLog.log(this, "$pkg job ${j.id}: ${e.message}")
                 continue
             }
-            deliverJob(s, pkg, j, records, push, now)
+            kLock.withLock { deliverJob(s, pkg, j, records, push, now) }
         }
     }
 
