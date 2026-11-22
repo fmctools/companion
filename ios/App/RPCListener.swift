@@ -33,14 +33,16 @@ actor KLock {
 @MainActor final class RPCListener {
     static let shared = RPCListener()
     private var task: Task<Void, Never>?
+    private var holds = WatchHolds()
     private var link: BLELink?
     /// slot → package name, from INFO
     private var apps: [Int: String] = [:]
     /// The stub's release, from the same read: PUSH needs 7.
     private var stub: UInt32 = 1
 
+    /// Nothing while an install, a face or a firmware update has the watch (`stop`), whoever asks.
     func start() {
-        guard task == nil else { return }
+        guard task == nil, holds.free else { return }
         task = Task {
             while !Task.isCancelled {
                 let stock = await listen()
@@ -49,11 +51,18 @@ actor KLock {
         }
     }
 
+    /// Off until each `stop` has had its `resume`.
     func stop() {
+        holds.take()
         task?.cancel()
         task = nil
         link?.disconnect()
         link = nil
+    }
+
+    func resume() {
+        holds.release()
+        start()
     }
 
     /// What WatchModel.check read: the apps by slot, and a loader on a watch that had none.

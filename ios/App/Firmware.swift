@@ -152,7 +152,7 @@ import WireKit
     /// One K session of its own; the services' listener holds K, so it is off meanwhile.
     private static func k(_ body: @escaping @Sendable (any Requester) async throws -> Void) async throws {
         RPCListener.shared.stop()
-        defer { RPCListener.shared.start() }
+        defer { RPCListener.shared.resume() }
         let link = BLELink()
         defer { link.disconnect() }
         try await link.connect()
