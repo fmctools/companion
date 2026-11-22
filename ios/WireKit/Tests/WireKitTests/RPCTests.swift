@@ -528,3 +528,15 @@ let storageIDs = Data(RPCMethod.free)
     #expect(await ask(h, call(RPCMethod.jobDelete, [0]))?.0 == .ok)
     #expect(h.jobs["weather.app"] == [])
 }
+
+/// WeatherKit starts a day at midnight at the place; the watch counts days on the phone's clock.
+@Test func forecastDayOnPhoneClock() {
+    func cal(_ id: String) -> Calendar { var c = Calendar(identifier: .gregorian); c.timeZone = TimeZone(identifier: id)!; return c }
+    func midnight(_ day: Int, _ id: String) -> Date { cal(id).date(from: DateComponents(year: 2026, month: 11, day: day))! }
+    let now = midnight(22, "America/New_York") + 10 * 3600 // 10:00 on the 22nd in New York
+    for zone in ["America/New_York", "Europe/London", "Europe/Moscow", "America/Los_Angeles", "Pacific/Honolulu"] {
+        let ny = cal("America/New_York")
+        #expect(forecastDay(midnight(22, zone), now: now, calendar: ny) == 0, "\(zone)")
+        #expect(forecastDay(midnight(23, zone), now: now, calendar: ny) == 1, "\(zone)")
+    }
+}
