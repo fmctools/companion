@@ -65,7 +65,8 @@ public func replies(id: UInt8, status: RPCStatus, records: [Data]) -> [Data] {
 /// UTF-8, cut to at most `max` bytes at a character boundary.
 public func utf8Cut(_ s: String, _ max: Int) -> Data {
     var out = Data()
-    for c in s {
+    // code points, as the SDK and Android cut: by Character, "e" + U+0301 or "\r\n" would give other bytes
+    for c in s.unicodeScalars {
         let u = Data(String(c).utf8)
         guard out.count + u.count <= max else { break }
         out += u

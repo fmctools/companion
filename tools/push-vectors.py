@@ -7,7 +7,9 @@ sys.path.insert(0, os.path.join(os.path.expanduser(os.environ.get("CMF_SDK", "~/
 from wp2apps import install  # noqa: E402
 
 widgets = [("USD", "92.41"), ("Погода в Москве сегодня", "−3° снег, ветер 5 м/с\nзавтра −7°"), ("", ""),
-           ("A title of exactly 23 b", "a value that is longer than thirty-nine bytes for sure")]
+           ("A title of exactly 23 b", "a value that is longer than thirty-nine bytes for sure"),
+           # cut between code points, not graphemes: the accent and the LF go, what they follow stays
+           ("1234567890123456789012e\u0301", "x" * 38 + "\r\n")]
 blob_records = [
     {"records": ["c8000800", "7b2274223a32317d"], "blob": "04c8000800087b2274223a32317d"},
     {"records": ["aa" * 100, "bb" * 30], "blob": "64" + "aa" * 100, "note": "the second record doesn't fit: whole records only"},
