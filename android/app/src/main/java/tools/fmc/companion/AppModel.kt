@@ -247,10 +247,12 @@ class AppModel(app: Application) : AndroidViewModel(app) {
      *  to a screen. */
     fun afterFlash(stub: Long) = viewModelScope.launch {
         installing = true
+        WatchLink.using.incrementAndGet()
         val ok = try {
             retry(20_000, 600_000) { check().join(); (loader?.stub?.version ?: 0) >= stub }
         } finally {
             installing = false
+            WatchLink.using.decrementAndGet()
         }
         if (ok) FirmwareModel.landed(getApplication())
     }

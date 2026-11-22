@@ -43,6 +43,7 @@ import tools.fmc.companion.wire.RpcError
 import tools.fmc.companion.wire.RpcStatus
 import tools.fmc.companion.wire.batteryRecord
 import tools.fmc.companion.wire.calendarRecord
+import tools.fmc.companion.wire.currentHours
 import tools.fmc.companion.wire.eventTimes
 import tools.fmc.companion.wire.httpRecords
 import tools.fmc.companion.wire.locationRecord
@@ -51,6 +52,7 @@ import tools.fmc.companion.wire.rgb565
 import tools.fmc.companion.wire.u8
 import tools.fmc.companion.wire.WeatherHour
 import tools.fmc.companion.wire.weatherArgs
+import tools.fmc.companion.wire.weatherCard
 import tools.fmc.companion.wire.weatherDay
 import tools.fmc.companion.wire.weatherHours
 import tools.fmc.companion.wire.weatherNow
@@ -184,7 +186,7 @@ class PhoneServices(private val context: Context, private val grants: Grants) : 
     /** The last known fix, a fresh one when that is over 15 min old; the locality with it. */
     private suspend fun location(): Pair<Location, String> {
         val lm = context.getSystemService(LocationManager::class.java)
-        val last = lm.getProviders(true).mapNotNull { lm.getLastKnownLocation(it) }.maxByOrNull { it.elapsedRealtimeNanos }
+        val last = lastKnown(lm)
         val fresh = if (last != null && ageMin(last) < 15) null else withTimeoutOrNull(4000) {
             val provider = if (lm.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) LocationManager.NETWORK_PROVIDER
             else LocationManager.PASSIVE_PROVIDER
@@ -197,6 +199,9 @@ class PhoneServices(private val context: Context, private val grants: Grants) : 
         val l = fresh ?: last ?: throw RpcError(RpcStatus.UNAVAILABLE)
         return l to place(l)
     }
+
+    private fun lastKnown(lm: LocationManager): Location? =
+        lm.getProviders(true).mapNotNull { lm.getLastKnownLocation(it) }.maxByOrNull { it.elapsedRealtimeNanos }
 
     /** Locality by 0.1° cell, cached; "" when the geocoder has none in time. */
     private suspend fun place(l: Location): String {
@@ -220,26 +225,37 @@ class PhoneServices(private val context: Context, private val grants: Grants) : 
         return (found.locality ?: found.subAdminArea ?: found.adminArea ?: "").also { places[cell] = it }
     }
 
-    private class Forecast(val at: Long, val json: JSONObject)
+    /** [located]: from a fresh fix, or one that was asked for. Otherwise only the card reuses it. */
+    private class Forecast(val at: Long, val json: JSONObject, val located: Boolean)
+
+    /** Weather's card from the same forecast, a stale copy when there's no new one; null with none. It never asks for
+     *  a location fix: it runs in the background, so the last known one has to do. */
+    suspend fun weatherCardRecord(): ByteArray? = try {
+        weatherCard(weather(days = 0, hours = 4, locate = false))
+    } catch (e: kotlinx.coroutines.CancellationException) {
+        throw e
+    } catch (_: Exception) {
+        null
+    }
 
     /** Open-Meteo, cached 30 min; a stale copy when the network is down. */
-    private suspend fun weather(days: Int, hours: Int): List<ByteArray> {
+    private suspend fun weather(days: Int, hours: Int, locate: Boolean = true): List<ByteArray> {
         val now = System.currentTimeMillis()
-        val f = forecast?.takeIf { now - it.at < 30 * 60_000 }
-            ?: runCatching { Forecast(now, fetchForecast()) }.getOrNull()?.also { forecast = it }
+        val f = forecast?.takeIf { now - it.at < 30 * 60_000 && (it.located || !locate) }
+            ?: runCatching { fetchForecast(now, locate) }.getOrNull()?.also { forecast = it }
             ?: forecast ?: throw RpcError(RpcStatus.UNAVAILABLE)
         val cur = f.json.getJSONObject("current")
         val out = mutableListOf(weatherNow(cur.getDouble("temperature_2m"), cur.getInt("weather_code"),
             cur.getDouble("wind_speed_10m"), cur.getInt("relative_humidity_2m"), (now - f.at) / 60_000))
-        // the hours from the one that contains now: a cached copy may start an hour back
         f.json.optJSONObject("hourly")?.let { h ->
             val times = h.getJSONArray("time")
-            val thisHour = java.time.LocalDateTime.now().truncatedTo(ChronoUnit.HOURS)
-            val list = (0 until times.length()).filter { !java.time.LocalDateTime.parse(times.getString(it)).isBefore(thisHour) }.map {
-                WeatherHour(h.getJSONArray("temperature_2m").getDouble(it), h.getJSONArray("weather_code").getInt(it),
+            val all = (0 until times.length()).map {
+                java.time.LocalDateTime.parse(times.getString(it)) to WeatherHour(
+                    h.getJSONArray("temperature_2m").getDouble(it), h.getJSONArray("weather_code").getInt(it),
                     h.getJSONArray("precipitation_probability").optInt(it, 0), h.getJSONArray("is_day").optInt(it, 1) == 0)
             }
-            weatherHours(thisHour.hour, list, hours)?.let { out += it }
+            val (hour, list) = currentHours(all, java.time.LocalDateTime.now())
+            weatherHours(hour, list, hours)?.let { out += it }
         }
         val d = f.json.getJSONObject("daily")
         val today = LocalDate.now()
@@ -254,8 +270,9 @@ class PhoneServices(private val context: Context, private val grants: Grants) : 
     }
 
     // ponytail: one cached forecast for wherever the phone was; it follows a move after 30 min
-    private suspend fun fetchForecast(): JSONObject {
-        val (l, _) = location()
+    private suspend fun fetchForecast(now: Long, locate: Boolean): Forecast {
+        val l = if (locate) location().first
+        else lastKnown(context.getSystemService(LocationManager::class.java)) ?: throw RpcError(RpcStatus.UNAVAILABLE)
         val url = "https://api.open-meteo.com/v1/forecast?latitude=%.2f&longitude=%.2f".format(Locale.US, l.latitude, l.longitude) +
             "&current=temperature_2m,weather_code,wind_speed_10m,relative_humidity_2m" +
             "&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max" +
@@ -263,7 +280,7 @@ class PhoneServices(private val context: Context, private val grants: Grants) : 
             "&wind_speed_unit=ms&timezone=auto&forecast_days=8"
         val (code, body) = fetch(url)
         if (code != 200) throw RpcError(RpcStatus.UNAVAILABLE)
-        return JSONObject(String(body))
+        return Forecast(now, JSONObject(String(body)), located = locate || ageMin(l) < 15)
     }
 
     private companion object {
