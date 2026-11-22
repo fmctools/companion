@@ -68,6 +68,7 @@ fun refusalText(why: FaceRefusal) = when (why) {
         str(R.string.refusal_image_too_big, why.w, why.h, MAX_IMAGE_SIDE)
     is FaceRefusal.ScreenOverBudget ->
         str(if (why.aod) R.string.refusal_over_budget_aod else R.string.refusal_over_budget_main, mb(why.bytes), mb(SCREEN_BUDGET))
+    FaceRefusal.Unmeasurable -> str(R.string.refusal_unmeasurable)
     else -> str(R.string.refusal_not_face)
 }
 

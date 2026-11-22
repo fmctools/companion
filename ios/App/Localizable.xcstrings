@@ -5083,6 +5083,34 @@
         }
       }
     },
+    "The app can't measure how much memory this face needs, and too much makes a Watch 3 Pro restart in a loop. Nothing was sent to the watch." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Приложение не может посчитать, сколько памяти нужно этому циферблату, а от нехватки памяти Watch 3 Pro зацикливается на перезагрузке. На часы ничего не отправлено."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Застосунок не може порахувати, скільки пам’яті потрібно цьому циферблату, а через брак пам’яті Watch 3 Pro циклічно перезавантажується. На годинник нічого не надіслано."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La app no puede calcular cuánta memoria necesita esta esfera y, si le falta memoria, el Watch 3 Pro se reinicia en bucle. No se envió nada al reloj."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ऐप यह नहीं माप सकता कि इस फ़ेस को कितनी मेमोरी चाहिए, और मेमोरी कम पड़ने पर Watch 3 Pro बार-बार रीस्टार्ट होती है। घड़ी पर कुछ नहीं भेजा गया।"
+          }
+        }
+      }
+    },
     "The firmware is about 57 MB. Before installing: charge the watch, keep the phone next to it, and close Nothing X." : {
       "localizations" : {
         "ru" : {

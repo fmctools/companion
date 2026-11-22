@@ -69,6 +69,25 @@ public func screenMemory(_ screen: FaceNode, _ res: [FaceResource]) -> (bytes: I
     return (bytes, bytes <= screenBudget ? .fits : floor <= screenBudget ? .compressed : .tooHeavy)
 }
 
+/// The colour formats `decodedBytes` knows.
+private let measured: Set<Int> = [1, 4, 5, 13, 14, 24, 28]
+/// The tags that hold layers in every face of the catalog and both factory corpora (`CONTAINERS`).
+private let containers: Set<UInt8> = [0x21, 0x22, 0x30, 0x38, 0x60, 0x68, 0x70, 0x80, 0x81, 0x82, 0x83, 0x84, 0x85, 0x89]
+
+/// `measurable`: whether `screenBytes` sees everything the face shows. A screen or container that didn't parse into
+/// layers, a reference that leads to no resource (kept as `tail`) or an unknown format would count as zero bytes.
+func measurable(_ face: FaceBin) -> Bool {
+    func ok(_ n: FaceNode, top: Bool) -> Bool {
+        if n.tag == tagPreview { return true }
+        if let images = n.images { return images.allSatisfy { measured.contains(face.resources[$0].cf) } }
+        let opaque = n.hex?.isEmpty == false
+        if n.tag == 0x01, opaque || n.tail?.contains(where: { $0 != 0 }) == true { return false }
+        if opaque, top || containers.contains(n.tag) { return false }
+        return n.subs?.allSatisfy { ok($0, top: false) } ?? true
+    }
+    return face.screens.allSatisfy { ok($0, top: true) }
+}
+
 /// `overBudget`: the screens a Watch 3 Pro can't hold (index into `screens`), with what each needs.
 func overBudget(_ face: FaceBin) -> [(screen: Int, tag: UInt8, bytes: Int)] {
     face.screens.indices.compactMap { i in
