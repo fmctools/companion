@@ -15,15 +15,19 @@ import Testing
         let start = try #require(format.date(from: c.start)), at = try #require(format.date(from: c.at))
         let forecast = c.hours.enumerated().map { i, h in
             (start: start.addingTimeInterval(Double(i) * 3600),
-             hour: WeatherHour(temp: h[0], code: Int(h[1]), precip: 0, night: false))
+             hour: WeatherHour(temp: h[0], code: Int(h[1]), precip: 100, night: h.count > 2)) // 100 shares its byte with night
         }
         var records = c.now.map { [weatherRecord(WeatherNow(temp: $0[0], code: Int($0[1]), wind: 0, humidity: 0, ageMin: 0))] } ?? []
         if let hours = currentHours(forecast, now: at, calendar: calendar), let r = weatherRecord(hours, limit: 4) {
             records.append(r)
         }
-        #expect(weatherCard(records) == c.hex.map(hex), "\(c.note)")
+        let hour = calendar.component(.hour, from: at)
+        #expect(weatherCard(records, hour: hour) == c.hex.map(hex), "\(c.note)")
     }
-    for i in p.weather_icons { #expect(weatherIcon(i[0]) == i[1], "WMO \(i[0])") }
+    for i in p.weather_icons {
+        #expect(weatherIcon(i[0], night: false) == i[1], "WMO \(i[0])")
+        #expect(weatherIcon(i[0], night: true) == i[2], "WMO \(i[0]) at night")
+    }
 }
 
 @Test func weatherCardGate() {

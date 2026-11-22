@@ -137,9 +137,11 @@ import WireKit
     /// fix: it runs in the background, so the last known one has to do.
     func weatherCardRecord() async -> Data? {
         try? await fetchForecast(locate: false)
-        guard let w = forecast() else { return nil }
+        let time = Date.now // one for both, or they could fall on either side of an hour
+        guard let w = forecast(at: time) else { return nil }
         let hours = w.hours.flatMap { weatherRecord($0, limit: 4) }
-        return weatherCard([weatherRecord(w.now)] + (hours.map { [$0] } ?? []))
+        return weatherCard([weatherRecord(w.now)] + (hours.map { [$0] } ?? []),
+                           hour: Calendar.current.component(.hour, from: time))
     }
 
     private func fetchForecast(locate: Bool) async throws {
@@ -157,8 +159,8 @@ import WireKit
         cached = (.now, locate || -loc.timestamp.timeIntervalSinceNow <= 15 * 60, now, Array(hourly), Array(daily))
     }
 
-    /// The cached forecast as of now.
-    private func forecast() -> (now: WeatherNow, hours: WeatherHours?, days: [WeatherDay])? {
+    /// The cached forecast as of `time`.
+    private func forecast(at time: Date = .now) -> (now: WeatherNow, hours: WeatherHours?, days: [WeatherDay])? {
         guard let cached else { return nil }
         let cal = Calendar.current, today = cal.startOfDay(for: .now)
         let c = cached.now
@@ -177,7 +179,7 @@ import WireKit
             (start: h.date, hour: WeatherHour(temp: h.temperature.converted(to: .celsius).value, code: wmo(h.condition),
                                               precip: Int((h.precipitationChance * 100).rounded()), night: !h.isDaylight))
         }
-        return (now, currentHours(hours, now: .now, calendar: cal), days)
+        return (now, currentHours(hours, now: time, calendar: cal), days)
     }
 
     /// With the user's headers for (package, host) and its cookie jar; neither goes to the watch or the log.

@@ -8,19 +8,21 @@ import Foundation
 public let weatherPackage = "weather"
 
 /// A forecast's hours from the one that contains `now`, counted on the phone's clock: a cached copy may start hours
-/// back. nil when every hour of it has passed.
+/// back. `hour` is the first one's own, so one that only starts after this hour doesn't pass for it. nil when every
+/// hour of it has passed.
 public func currentHours(_ forecast: [(start: Date, hour: WeatherHour)], now: Date, calendar: Calendar) -> WeatherHours? {
     let thisHour = calendar.dateInterval(of: .hour, for: now)?.start ?? now
-    let hours = forecast.filter { $0.start >= thisHour }.map(\.hour)
-    return hours.isEmpty ? nil : WeatherHours(hour: calendar.component(.hour, from: thisHour), hours: hours)
+    let left = forecast.filter { $0.start >= thisHour }
+    guard let first = left.first else { return nil }
+    return WeatherHours(hour: calendar.component(.hour, from: first.start), hours: left.map(\.hour))
 }
 
-/// The icon's index in Weather's package, its `model::Icon` order: clear, partly, cloud, fog, drizzle, rain, snow,
-/// storm. A contract with that package: never reorder.
-func weatherIcon(_ code: Int) -> Int {
+/// The icon's index in Weather's package: its `model::Icon` order (clear, partly, cloud, fog, drizzle, rain, snow,
+/// storm), then clear (8) and partly (9) at night. A contract with that package: append only.
+func weatherIcon(_ code: Int, night: Bool) -> Int {
     switch code {
-    case 0: 0
-    case 1, 2: 1
+    case 0: night ? 8 : 0
+    case 1, 2: night ? 9 : 1
     case 45, 48: 3
     case 51...57: 4
     case 61...67, 80...82: 5
@@ -31,23 +33,28 @@ func weatherIcon(_ code: Int) -> Int {
 }
 
 /// Now, then the next three hours after the one that contains now (fewer when fewer are known), from the records
-/// `weather` answers. nil without the current record: then the phone writes nothing.
-public func weatherCard(_ records: [Data]) -> Data? {
+/// `weather` answers at `hour` (0–23) of the phone's clock. Night is only what an hourly entry's bit says; for Now
+/// that of the entry that contains now, day without one. nil without the current record: then the phone writes
+/// nothing.
+public func weatherCard(_ records: [Data], hour: Int) -> Data? {
     let records = records.map { [UInt8]($0) }
     guard let now = records.first(where: { $0.first == 0 && $0.count >= 4 }) else { return nil }
     let tenths = Int(Int16(bitPattern: UInt16(now[1]) | UInt16(now[2]) << 8))
     let degrees = tenths >= 0 ? (tenths + 5) / 10 : -((5 - tenths) / 10) // halves away from zero, never "-0"
-    var columns = [WidgetColumn(caption: "Now", icon: weatherIcon(Int(now[3])), value: "\(degrees)\u{B0}")]
-    if let h = records.first(where: { $0.first == 2 && $0.count >= 2 }) {
-        var i = 1 // entry 0 is the hour that contains now
-        while i <= 3, 2 + 3 * i + 2 < h.count {
-            let at = 2 + 3 * i
-            columns.append(WidgetColumn(caption: String(format: "%02d:00", (Int(h[1]) + i) % 24),
-                                        icon: weatherIcon(Int(h[at + 1])), value: "\(Int8(bitPattern: h[at]))\u{B0}"))
-            i += 1
+    var next: [WidgetColumn] = [], nightNow = false
+    if let h = records.first(where: { $0.first == 2 && $0.count >= 5 }) {
+        // how far entry 0 is ahead of the hour that contains now: 0 unless the forecast only starts later
+        let ahead = (Int(h[1]) - hour + 24) % 24, count = (h.count - 2) / 3
+        nightNow = ahead == 0 && h[4] & 0x80 != 0
+        for later in 1...3 where (0..<count).contains(later - ahead) {
+            let i = later - ahead, at = 2 + 3 * i
+            next.append(WidgetColumn(caption: String(format: "%02d:00", (Int(h[1]) + i) % 24),
+                                     icon: weatherIcon(Int(h[at + 1]), night: h[at + 2] & 0x80 != 0),
+                                     value: "\(Int8(bitPattern: h[at]))\u{B0}"))
         }
     }
-    return columnsRecord(columns)
+    let first = WidgetColumn(caption: "Now", icon: weatherIcon(Int(now[3]), night: nightNow), value: "\(degrees)\u{B0}")
+    return columnsRecord([first] + next)
 }
 
 /// Weather's slot when the phone may push its card: stub 9 or later, the app on the watch by its package name and

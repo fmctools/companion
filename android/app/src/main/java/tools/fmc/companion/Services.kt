@@ -227,21 +227,27 @@ class PhoneServices(private val context: Context, private val grants: Grants) : 
     /** Weather's card from the same forecast, a stale copy when there's no new one; null with none. It never asks for
      *  a location fix: it runs in the background, so the last known one has to do. */
     suspend fun weatherCardRecord(): ByteArray? = try {
-        weatherCard(weather(days = 0, hours = 4, locate = false))
+        val f = currentForecast(locate = false)
+        val now = ZonedDateTime.now() // one for both, or they could fall on either side of an hour
+        weatherCard(forecastRecords(f.json, f.at, now, days = 0, hours = 4), now.hour)
     } catch (e: kotlinx.coroutines.CancellationException) {
         throw e
     } catch (_: Exception) {
         null
     }
 
+    private suspend fun weather(days: Int, hours: Int): List<ByteArray> {
+        val f = currentForecast(locate = true)
+        return forecastRecords(f.json, f.at, ZonedDateTime.now(), days, hours)
+    }
+
     /** Open-Meteo, cached 30 min; a stale copy when the network is down. */
-    private suspend fun weather(days: Int, hours: Int, locate: Boolean = true): List<ByteArray> {
+    private suspend fun currentForecast(locate: Boolean): Forecast {
         val now = System.currentTimeMillis()
         val zone = java.time.ZoneId.systemDefault()
-        val f = forecast?.takeIf { now - it.at < 30 * 60_000 && it.zone == zone && (it.located || !locate) }
+        return forecast?.takeIf { now - it.at < 30 * 60_000 && it.zone == zone && (it.located || !locate) }
             ?: runCatching { fetchForecast(now, zone, locate) }.getOrNull()?.also { forecast = it }
             ?: forecast ?: throw RpcError(RpcStatus.UNAVAILABLE)
-        return forecastRecords(f.json, f.at, ZonedDateTime.now(), days, hours)
     }
 
     // ponytail: one cached forecast for wherever the phone was; it follows a move after 30 min

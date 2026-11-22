@@ -222,7 +222,8 @@ thunderstorm). Source: WeatherKit on iOS (conditions mapped to these codes), Ope
 for 30 min and fetches with a 6 s timeout; nothing cached and no network: `UNAVAILABLE`.
 
 The hourly record: one record for all hours, only when `hours` > 0 and the source has hours. `hour` is the local
-hour (0–23) of the first entry, the hour that contains now; the entries are consecutive hours, `n` =
+hour (0–23) of the first entry: the hour that contains now, or a later one when the forecast only starts after it (then
+no entry is now's). The entries are consecutive hours, `n` =
 min(`hours`, what the source has), read from the record's length. An entry's `temp` is in °C; its `precip` has the
 probability in bits 0–6 and bit 7 set when that hour is night. There are no sunrise or sunset times: they would
 give the position away, and the watch gets none from `weather`.
@@ -413,8 +414,13 @@ The value is the integer and `°` (`C2 B0`), no unit; the stub draws its own gly
 clock: a stale forecast drops the hours that passed, and fewer known hours give fewer columns. No current record:
 nothing is written.
 
-`icon` is an index into Weather's package icons (the `WP2W` trailer), in the order of Weather's `model::Icon`. It is a
-contract with that package, so the order never changes; there are no night variants.
+`icon` is an index into Weather's package icons (the `WP2W` trailer, ten of them): 0–7 in the order of Weather's
+`model::Icon`, then the two night drawings. It is a contract with that package, so it only grows at the end.
+
+Night is bit 7 of an hourly entry's `precip` and nothing else: no other "is daylight" source on either side, or their
+bytes would differ. An hourly column takes its own entry's bit. `Now` takes that of the entry that contains now, as
+Weather's Now page does; with no such entry (no hours, all passed, the forecast starts later) it is day. Only the
+codes of 0 and 1 change at night, to 8 and 9; the other six conditions have one drawing.
 
 | Index | Icon | WMO codes |
 |---|---|---|
@@ -426,6 +432,8 @@ contract with that package, so the order never changes; there are no night varia
 | 5 | rain | 61–67, 80–82 |
 | 6 | snow | 71–77, 85, 86 |
 | 7 | storm | 95–99 |
+| 8 | clear at night (moon) | 0, night |
+| 9 | partly at night (moon and cloud) | 1, 2, night |
 
 When: once the link is up, then when the hour changes. The same bytes aren't sent twice in a session (a new session
 sends once; the stub doesn't write what it already has). After a write the next waits 60 s, after a `Later` the time it

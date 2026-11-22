@@ -13,8 +13,10 @@ widgets = [("USD", "92.41"), ("Погода в Москве сегодня", "�
            # cut between code points, not graphemes: the accent and the LF go, what they follow stays
            ("1234567890123456789012e\u0301", "x" * 38 + "\r\n")]
 GOLDEN = [("Now", 6, "-3\u00b0"), ("23:00", 2, "-4\u00b0"), ("00:00", 0, "-5\u00b0"), ("01:00", 7, "0\u00b0")]
+NIGHT = [("Now", 8, "-3\u00b0"), ("23:00", 9, "-4\u00b0"), ("00:00", 2, "-5\u00b0"), ("01:00", 7, "0\u00b0")]
 columns = [
     ("golden, four columns", GOLDEN),
+    ("golden at night", NIGHT),
     ("one column", GOLDEN[:1]),
     ("two columns", GOLDEN[:2]),
     ("three, one without an icon", GOLDEN[:2] + [("00:00", None, "--")]),
@@ -39,8 +41,9 @@ for c in bad_columns:
     raise SystemExit(f"columns_record took {c}")
 card = install.columns_record(GOLDEN)
 
-# Weather's card (docs/miniapp-rpc.md): the forecast's hourly entries from `start`, one per hour, as (temp, WMO code),
-# and the current one, seen at `at` on the phone's clock. The expected columns are the contract's, the bytes the SDK's.
+# Weather's card (docs/miniapp-rpc.md): the forecast's hourly entries from `start`, one per hour, as (temp, WMO code)
+# or (temp, WMO code, 1) at night, and the current one, seen at `at` on the phone's clock. The expected columns are the
+# contract's, the bytes the SDK's.
 D = "\u00b0"
 DAY = [(h, 3) for h in range(26)]
 cards = [
@@ -72,9 +75,38 @@ cards = [
     ("now 2.46 is 2.5 on the wire", "2026-11-22T12:30", "2026-11-22T12:00", (2.46, 0), [], [("Now", 0, "3" + D)]),
     ("an hour's temperature is an i8", "2026-11-22T12:30", "2026-11-22T12:00", (-40, 0), [(0, 0), (-200, 0), (200, 0)],
      [("Now", 0, "-40" + D), ("13:00", 0, "-128" + D), ("14:00", 0, "127" + D)]),
+    ("golden at night", "2026-11-22T22:40", "2026-11-22T22:00", (-2.5, 0),
+     [(-2.0, 3, 1), (-3.5, 1, 1), (-5.4, 3, 1), (-0.4, 95, 1), (4, 0, 1)], NIGHT),
+    ("night goes on past midnight", "2026-11-23T00:10", "2026-11-22T21:00", (5, 1),
+     [(0, 1)] + [(h, 1, 1) for h in range(1, 10)],
+     [("Now", 9, "5" + D), ("01:00", 9, "4" + D), ("02:00", 9, "5" + D), ("03:00", 9, "6" + D)]),
+    ("sunset: the hour's own bit, not Now's", "2026-11-22T17:50", "2026-11-22T17:00", (3, 0),
+     [(3, 0), (2, 0, 1), (1, 2, 1), (0, 3, 1)],
+     [("Now", 0, "3" + D), ("18:00", 8, "2" + D), ("19:00", 9, "1" + D), ("20:00", 2, "0" + D)]),
+    ("before sunrise", "2026-11-22T06:59", "2026-11-22T06:00", (-1, 0),
+     [(0, 0, 1), (1, 2, 1), (2, 0), (3, 1)],
+     [("Now", 8, "-1" + D), ("07:00", 9, "1" + D), ("08:00", 0, "2" + D), ("09:00", 1, "3" + D)]),
+    ("sunrise: a stale cache's first hour was night", "2026-11-22T08:00", "2026-11-22T06:00", (2, 0),
+     [(0, 0, 1), (1, 2, 1), (2, 0), (3, 1), (4, 0), (5, 0)],
+     [("Now", 0, "2" + D), ("09:00", 1, "3" + D), ("10:00", 0, "4" + D), ("11:00", 0, "5" + D)]),
+    ("only clear and partly have a night", "2026-11-22T22:10", "2026-11-22T22:00", (1, 61),
+     [(1, 0, 1), (2, 45, 1), (3, 73, 1), (4, 95, 1)],
+     [("Now", 5, "1" + D), ("23:00", 3, "2" + D), ("00:00", 6, "3" + D), ("01:00", 7, "4" + D)]),
+    ("no hour contains now, no hours: day", "2026-11-22T23:30", "2026-11-22T23:00", (3, 0), [], [("Now", 0, "3" + D)]),
+    ("no hour contains now, all passed: day", "2026-11-22T23:30", "2026-11-22T20:00", (3, 0), [(5, 0, 1), (6, 0, 1)],
+     [("Now", 0, "3" + D)]),
+    ("no hour contains now, the first is the next: day", "2026-11-22T23:59", "2026-11-23T00:00", (3, 0),
+     [(2, 0, 1), (1, 0, 1), (0, 0, 1), (-1, 0, 1)],
+     [("Now", 0, "3" + D), ("00:00", 8, "2" + D), ("01:00", 8, "1" + D), ("02:00", 8, "0" + D)]),
+    ("no hour contains now, the first is two on: day", "2026-11-22T21:30", "2026-11-22T23:00", (3, 2),
+     [(2, 1, 1), (1, 1, 1), (0, 1, 1)],
+     [("Now", 1, "3" + D), ("23:00", 9, "2" + D), ("00:00", 9, "1" + D)]),
+    ("no hour contains now, the first is past the three", "2026-11-22T18:30", "2026-11-22T22:00", (3, 0),
+     [(2, 0, 1), (1, 0, 1)], [("Now", 0, "3" + D)]),
     ("no current weather: nothing to write", "2026-11-22T12:30", "2026-11-22T12:00", None, [(1, 0), (2, 0)], None),
 ]
-# model::Icon of Weather, by WMO code: both ends of every range and their neighbours
+# Weather's icons by WMO code, as [code, by day, at night]: both ends of every range and their neighbours. Night only
+# has a drawing for 0 and 1, appended as 8 and 9.
 icons = {0: [0], 1: [1, 2], 3: [45, 48], 4: [51, 53, 57], 5: [61, 67, 80, 82], 6: [71, 77, 85, 86], 7: [95, 96, 99],
          2: [3, 4, 44, 46, 47, 49, 50, 58, 60, 68, 70, 78, 79, 83, 84, 87, 94, 100, 255]}
 
@@ -117,7 +149,7 @@ out = {
     "columns_bad": [named(c) for c in bad_columns],
     "replies": [{"hex": "00", "ok": True}, {"hex": "0a60ea0000", "later_ms": 60000}, {"hex": "07", "refused": 7},
                 {"hex": "01", "refused": 1}, {"hex": "02", "refused": 2}, {"hex": "", "refused": 255}],
-    "weather_icons": sorted([code, index] for index, codes in icons.items() for code in codes),
+    "weather_icons": sorted([code, index, {0: 8, 1: 9}.get(index, index)] for index, codes in icons.items() for code in codes),
     "weather_cards": [{"note": note, "at": at, "start": start, "now": now, "hours": hours,
                        "hex": install.columns_record(want).hex() if want else None}
                       for note, at, start, now, hours, want in cards],

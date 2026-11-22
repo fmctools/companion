@@ -12,18 +12,21 @@ import java.time.temporal.ChronoUnit
 const val WEATHER_PACKAGE = "weather"
 
 /** A forecast's hours from the one that contains [now], counted on the phone's clock (a cached copy may start hours
- *  back), and that hour (0–23). An empty list when every hour of it has passed. */
+ *  back), and the first one's own hour (0–23), so one that only starts after this hour doesn't pass for it. An empty
+ *  list when every hour of it has passed. */
 fun currentHours(forecast: List<Pair<Instant, WeatherHour>>, now: ZonedDateTime): Pair<Int, List<WeatherHour>> {
     val thisHour = now.truncatedTo(ChronoUnit.HOURS) // keeps the offset, so the repeated hour of a clock change counts once
     val from = thisHour.toInstant()
-    return thisHour.hour to forecast.filter { !it.first.isBefore(from) }.map { it.second }
+    val left = forecast.filter { !it.first.isBefore(from) }
+    val hour = left.firstOrNull()?.first?.atZone(now.zone)?.hour ?: thisHour.hour
+    return hour to left.map { it.second }
 }
 
-/** The icon's index in Weather's package, its `model::Icon` order: clear, partly, cloud, fog, drizzle, rain, snow,
- *  storm. A contract with that package: never reorder. */
-internal fun weatherIcon(code: Int): Int = when (code) {
-    0 -> 0
-    1, 2 -> 1
+/** The icon's index in Weather's package: its `model::Icon` order (clear, partly, cloud, fog, drizzle, rain, snow,
+ *  storm), then clear (8) and partly (9) at night. A contract with that package: append only. */
+internal fun weatherIcon(code: Int, night: Boolean): Int = when (code) {
+    0 -> if (night) 8 else 0
+    1, 2 -> if (night) 9 else 1
     45, 48 -> 3
     in 51..57 -> 4
     in 61..67, in 80..82 -> 5
@@ -33,22 +36,31 @@ internal fun weatherIcon(code: Int): Int = when (code) {
 }
 
 /** Now, then the next three hours after the one that contains now (fewer when fewer are known), from the records
- *  `weather` answers. null without the current record: then the phone writes nothing. */
-fun weatherCard(records: List<ByteArray>): ByteArray? {
+ *  `weather` answers at [hour] (0–23) of the phone's clock. Night is only what an hourly entry's bit says; for Now
+ *  that of the entry that contains now, day without one. null without the current record: then the phone writes
+ *  nothing. */
+fun weatherCard(records: List<ByteArray>, hour: Int): ByteArray? {
     val now = records.firstOrNull { it.size >= 4 && it.u8(0) == 0 } ?: return null
     val tenths = now.le16(1).toShort().toInt()
     val degrees = if (tenths >= 0) (tenths + 5) / 10 else -((5 - tenths) / 10) // halves away from zero, never "-0"
-    val columns = mutableListOf(WidgetColumn("Now", weatherIcon(now.u8(3)), "$degrees°"))
-    records.firstOrNull { it.size >= 2 && it.u8(0) == 2 }?.let { h ->
-        // entry 0 is the hour that contains now
-        for (i in 1 until minOf(4, (h.size - 2) / 3)) {
+    val next = mutableListOf<WidgetColumn>()
+    var nightNow = false
+    records.firstOrNull { it.size >= 5 && it.u8(0) == 2 }?.let { h ->
+        // how far entry 0 is ahead of the hour that contains now: 0 unless the forecast only starts later
+        val ahead = (h.u8(1) - hour + 24) % 24
+        val count = (h.size - 2) / 3
+        nightNow = ahead == 0 && h.u8(4) and 0x80 != 0
+        for (later in 1..3) {
+            val i = later - ahead
+            if (i !in 0 until count) continue
             val at = 2 + 3 * i
             // not String.format: some locales have digits of their own
             val caption = "${((h.u8(1) + i) % 24).toString().padStart(2, '0')}:00"
-            columns += WidgetColumn(caption, weatherIcon(h.u8(at + 1)), "${h[at].toInt()}°")
+            val night = h.u8(at + 2) and 0x80 != 0
+            next += WidgetColumn(caption, weatherIcon(h.u8(at + 1), night), "${h[at].toInt()}°")
         }
     }
-    return columnsRecord(columns)
+    return columnsRecord(listOf(WidgetColumn("Now", weatherIcon(now.u8(3), nightNow), "$degrees°")) + next)
 }
 
 /** Weather's slot when the phone may push its card: stub 9 or later, the app on the watch by its package name and

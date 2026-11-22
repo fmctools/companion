@@ -18,19 +18,24 @@ class WeatherCardTest {
             val hours = c.getJSONArray("hours")
             val forecast = (0 until hours.length()).map {
                 val h = hours.getJSONArray(it)
-                start.plusSeconds(it * 3600L) to WeatherHour(h.getDouble(0), h.getInt(1), 0, false)
+                // 100 shares its byte with night
+                start.plusSeconds(it * 3600L) to WeatherHour(h.getDouble(0), h.getInt(1), 100, h.length() > 2)
             }
             val records = mutableListOf<ByteArray>()
             c.optJSONArray("now")?.let { records += weatherNow(it.getDouble(0), it.getInt(1), 0.0, 0, 0) }
-            val (hour, current) = currentHours(forecast, LocalDateTime.parse(c.getString("at")).atZone(ZoneOffset.UTC))
+            val at = LocalDateTime.parse(c.getString("at"))
+            val (hour, current) = currentHours(forecast, at.atZone(ZoneOffset.UTC))
             weatherHours(hour, current, 4)?.let { records += it }
-            assertEquals(if (c.isNull("hex")) null else c.getString("hex"), weatherCard(records)?.hex(), c.getString("note"))
+            assertEquals(if (c.isNull("hex")) null else c.getString("hex"), weatherCard(records, at.hour)?.hex(), c.getString("note"))
         }
     }
 
     @Test fun icons() {
         val icons = Vectors.push.getJSONArray("weather_icons")
-        for (k in 0 until icons.length()) icons.getJSONArray(k).let { assertEquals(it.getInt(1), weatherIcon(it.getInt(0)), "WMO ${it.getInt(0)}") }
+        for (k in 0 until icons.length()) icons.getJSONArray(k).let {
+            assertEquals(it.getInt(1), weatherIcon(it.getInt(0), night = false), "WMO ${it.getInt(0)}")
+            assertEquals(it.getInt(2), weatherIcon(it.getInt(0), night = true), "WMO ${it.getInt(0)} at night")
+        }
     }
 
     @Test fun gate() {

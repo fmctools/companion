@@ -59,7 +59,7 @@ reads says the same with and without icons. `install` (WireKit, the Android wire
 - an older stub refuses any byte past the header's sizes, so it gets the file cut there: byte for byte the package
   packed without icons, damaged trailer or not.
 
-A trailer adds up to 77 KB (16 icons of 4800 B).
+A trailer adds up to 77 KB (16 icons of 4800 B); Weather's ten add 48 KB.
 
 ## Weather's card
 
