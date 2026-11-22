@@ -379,6 +379,11 @@ later, `07` no app in that slot, `01` bad request or a stub before 8, `02` NAND 
 record of exactly 64 bytes and, from stub 9, a v2 record of up to 128 (short ones too); an older stub answers `01` to
 v2, so the phone reads the stub's version first.
 
+When they run: on Android in the foreground service's loop (`RpcService`, at least once a minute); on iOS in
+`RPCListener`'s loop, while the app is in the foreground or woken by BLE (about 10 s). iOS has no BGAppRefreshTask
+for them: it wakes the app without the watch's link, and delivering needs that link. A job is due `minutes` after
+its last run (success or not); a new or replaced job runs on the next check.
+
 #### Weather's card
 
 The one card the phone writes by itself, with no job: the store's Weather (package `weather`) shows now and the next
@@ -422,11 +427,6 @@ contract with that package, so the order never changes; there are no night varia
 When: once the link is up, then when the hour changes. The same bytes aren't sent twice in a session (a new session
 sends once; the stub doesn't write what it already has). After a write the next waits 60 s, after a `Later` the time it
 names; with no forecast or a refused push it is tried again in 5 min.
-
-When they run: on Android in the foreground service's loop (`RpcService`, at least once a minute); on iOS in
-`RPCListener`'s loop, while the app is in the foreground or woken by BLE (about 10 s). iOS has no BGAppRefreshTask
-for them: it wakes the app without the watch's link, and delivering needs that link. A job is due `minutes` after
-its last run (success or not); a new or replaced job runs on the next check.
 
 ### `0x70 phone.battery`
 
