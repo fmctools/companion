@@ -1,10 +1,10 @@
 import Foundation
 
 // PUSH (stub 8, cmf-watch-sdk docs/widget-push.md): the phone writes a watch app's widget card or start blob while
-// the app doesn't run. Used for its background jobs (docs/miniapp-rpc.md, job.set) and, from stub 9, for Weather's
+// the app doesn't run. Used for its background jobs (docs/miniapp-rpc.md, job.set) and, from stub 10, for Weather's
 // columns card (WeatherCard.swift).
 
-/// What a PUSH writes: the widget card's record (64 bytes; from stub 9 also v2, up to 128), or the blob the app gets
+/// What a PUSH writes: the widget card's record (64 bytes; from stub 10 also v2, up to 128), or the blob the app gets
 /// as its first message at start.
 public enum PushKind: Int, Codable, Sendable { case widget = 0, blob = 1 }
 
@@ -30,8 +30,8 @@ public struct WidgetColumn: Equatable, Sendable {
     public init(caption: String, icon: Int?, value: String) { (self.caption, self.icon, self.value) = (caption, icon, value) }
 }
 
-/// From stub 9 on: v2 records. An older stub answers BadRequest.
-public func canPushColumns(stub: UInt32) -> Bool { stub >= 9 }
+/// From stub 10 on: v2 records. An older stub answers BadRequest.
+public func canPushColumns(stub: UInt32) -> Bool { stub >= 10 }
 
 /// The v2 record the stub draws as columns: `FF 01 n`, then per column `caption[10] ‖ icon:u8 ‖ value[10]`
 /// (install.columns_record). nil for other than 1…4 columns or an icon outside 0…15.

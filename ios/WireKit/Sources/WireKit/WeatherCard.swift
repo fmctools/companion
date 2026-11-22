@@ -1,6 +1,6 @@
 import Foundation
 
-// Weather's widget card, kept fresh by the phone (stub 9, docs/miniapp-rpc.md "Weather's card"): now and the next three
+// Weather's widget card, kept fresh by the phone (stub 10, docs/miniapp-rpc.md "Weather's card"): now and the next three
 // hours as a v2 `columns` record, the same bytes the Weather app writes from the same answer. It is built from the
 // `weather` RPC's own records, so both sides round, clamp and count the hours alike.
 
@@ -57,7 +57,7 @@ public func weatherCard(_ records: [Data], hour: Int) -> Data? {
     return columnsRecord([first] + next)
 }
 
-/// Weather's slot when the phone may push its card: stub 9 or later, the app on the watch by its package name and
+/// Weather's slot when the phone may push its card: stub 10 or later, the app on the watch by its package name and
 /// holding the weather grant. Never a v1 card to an older stub: it would replace the app's own.
 public func weatherCardSlot(stub: UInt32, apps: [Int: String], granted: Bool) -> Int? {
     guard granted, canPushColumns(stub: stub) else { return nil }

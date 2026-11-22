@@ -45,7 +45,7 @@ public enum InstallError: Error, Equatable {
 }
 
 /// The first stub that takes a package's widget icon trailer ("WP2W", cmf-watch-sdk docs/app-icons.md).
-let trailerStub: UInt32 = 9
+let trailerStub: UInt32 = 10
 
 /// The package without its widget icon trailer, the same bytes as one packed without icons: body_crc doesn't cover
 /// the trailer (package.strip_trailer). An older stub refuses any byte past what the header says.
@@ -82,7 +82,7 @@ public func installed(_ s: Requester, slots: Int) async throws -> [Int: PackageH
 
 /// Installs an app package into the slot of the same name, else the first free one, and a loader package
 /// (kind 1) into slot L; returns the slot. `busy` while that app (or the loader's menu) runs on the watch.
-/// An app's widget icon trailer goes to stub 9 as it is (the stub checks it and drops a broken one); an older stub
+/// An app's widget icon trailer goes to stub 10 as it is (the stub checks it and drops a broken one); an older stub
 /// gets the package without it.
 public func install(_ s: Requester, package: Data, progress: @Sendable (Double) -> Void) async throws -> Int {
     guard let pkg = parseHeader(package), pkg.kind == 0 || pkg.kind == 1 else { throw InstallError.notAPackage }

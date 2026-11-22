@@ -1,10 +1,10 @@
 package tools.fmc.companion.wire
 
 // PUSH (stub 8, cmf-watch-sdk docs/widget-push.md): the phone writes a watch app's widget card or start blob while
-// the app doesn't run. Used for its background jobs (docs/miniapp-rpc.md, job.set) and, from stub 9, for Weather's
+// the app doesn't run. Used for its background jobs (docs/miniapp-rpc.md, job.set) and, from stub 10, for Weather's
 // columns card (WeatherCard.kt). Port of WireKit Push.swift.
 
-/** What a PUSH writes: the widget card's record (64 bytes; from stub 9 also v2, up to 128), or the blob the app gets
+/** What a PUSH writes: the widget card's record (64 bytes; from stub 10 also v2, up to 128), or the blob the app gets
  *  as its first message at start. */
 object PushKind {
     const val WIDGET = 0
@@ -28,8 +28,8 @@ fun widgetRecord(title: String, value: String): ByteArray = utf8Cut(title, 23).c
 /** One column of a v2 `columns` record. [icon] indexes the package's widget icons, null none. */
 data class WidgetColumn(val caption: String, val icon: Int?, val value: String)
 
-/** From stub 9 on: v2 records. An older stub answers BadRequest. */
-fun canPushColumns(stub: Long) = stub >= 9
+/** From stub 10 on: v2 records. An older stub answers BadRequest. */
+fun canPushColumns(stub: Long) = stub >= 10
 
 /** The v2 record the stub draws as columns: `FF 01 n`, then per column `caption[10] ‖ icon:u8 ‖ value[10]`
  *  (install.columns_record). null for other than 1..4 columns or an icon outside 0..15. */

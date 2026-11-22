@@ -166,6 +166,7 @@ struct PushVectors: Decodable {
     for c in p.columns { #expect(columnsRecord(columns(c.columns)) == hex(c.hex), "\(c.note)") }
     for c in p.columns_bad { #expect(columnsRecord(columns(c)) == nil) }
     #expect(!canPushColumns(stub: p.columns_stub - 1) && canPushColumns(stub: p.columns_stub))
+    #expect(p.columns_stub == 10 && !canPushColumns(stub: 9), "stub 9, the face guard, refuses v2")
 }
 
 /// What the watch receives for `file` from a phone that sees `stub`: the DATA payloads joined, and BEGIN's size and CRC
@@ -190,7 +191,8 @@ private func sent(_ file: Data, stub: UInt32) async throws -> Data {
     let t = try PushVectors.load().trailer
     let packed = hex(t.package), plain = hex(t.plain)
     #expect(parseHeader(packed) == parseHeader(plain) && parseHeader(packed)?.name == "weather")
-    for stub: UInt32 in [1, 7, t.stub - 1] {
+    #expect(t.stub == 10, "stub 9, the face guard, refuses extra bytes at END")
+    for stub: UInt32 in [1, 7, 9, t.stub - 1] {
         #expect(try await sent(packed, stub: stub) == plain, "stub \(stub): the package without icons, byte for byte")
     }
     for stub in [t.stub, t.stub + 1] { #expect(try await sent(packed, stub: stub) == packed, "stub \(stub): whole") }
@@ -199,7 +201,7 @@ private func sent(_ file: Data, stub: UInt32) async throws -> Data {
         var bad = [UInt8](packed.prefix(d.keep ?? packed.count))
         if let i = d.flip { bad[i] ^= 0xFF }
         #expect(try await sent(Data(bad), stub: t.stub - 1) == plain, "\(d.note): an older stub never sees it")
-        #expect(try await sent(Data(bad), stub: t.stub) == Data(bad), "\(d.note): stub 9 checks it itself")
+        #expect(try await sent(Data(bad), stub: t.stub) == Data(bad), "\(d.note): stub 10 checks it itself")
     }
     var huge = [UInt8](packed)
     huge.replaceSubrange(44..<48, with: [0xFF, 0xFF, 0xFF, 0xFF])

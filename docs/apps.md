@@ -54,7 +54,7 @@ An app may carry the icons of its widget card in a `WP2W` trailer after the relo
 `docs/app-icons.md`, "Widget icons"). `body_crc` and the header don't count it, so the 64-byte header the Apps tab
 reads says the same with and without icons. `install` (WireKit, the Android wire) reads the stub first:
 
-- stub 9 or later gets the file as it is. The stub checks the trailer's own CRC; with a damaged one the app installs
+- stub 10 or later gets the file as it is. The stub checks the trailer's own CRC; with a damaged one the app installs
   without icons, so the phone doesn't check it too.
 - an older stub refuses any byte past the header's sizes, so it gets the file cut there: byte for byte the package
   packed without icons, damaged trailer or not.
@@ -64,7 +64,7 @@ A trailer adds up to 77 KB (16 icons of 4800 B); Weather's ten add 48 KB.
 ## Weather's card
 
 The companion keeps the widget card of the store's Weather app (package `weather`) fresh: now and the next three hours,
-as a `columns` record pushed to stub 9 or later. The record, the icon order and the gate are in
+as a `columns` record pushed to stub 10 or later. The record, the icon order and the gate are in
 [miniapp-rpc.md](miniapp-rpc.md), "Weather's card". On each platform:
 
 - It runs in the services' loop and only there: iOS `RPCListener` (in the foreground and in the wakes it gets anyway),

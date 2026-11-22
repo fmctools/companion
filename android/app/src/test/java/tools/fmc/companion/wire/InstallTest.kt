@@ -5,6 +5,7 @@ import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -128,6 +129,8 @@ class InstallTest {
         for (i in 0 until bad.length()) assertNull(columnsRecord(columns(bad.getJSONArray(i))))
         val first = Vectors.push.getLong("columns_stub")
         assertEquals(listOf(false, true), listOf(first - 1, first).map(::canPushColumns))
+        assertEquals(10L, first)
+        assertFalse(canPushColumns(9), "stub 9, the face guard, refuses v2")
     }
 
     /** What the watch receives for [file] from a phone that sees [stub]; BEGIN's size and CRC must be of those bytes. */
@@ -147,18 +150,19 @@ class InstallTest {
         val t = Vectors.push.getJSONObject("trailer")
         val packed = hex(t.getString("package"))
         val plain = t.getString("plain")
-        val nine = t.getLong("stub")
+        val ten = t.getLong("stub")
+        assertEquals(10L, ten, "stub 9, the face guard, refuses extra bytes at END")
         assertEquals(parseHeader(hex(plain)), parseHeader(packed))
         assertEquals("weather", parseHeader(packed)?.name)
-        for (stub in listOf(1L, 7L, nine - 1)) assertEquals(plain, sent(packed, stub), "stub $stub: the package without icons, byte for byte")
-        for (stub in listOf(nine, nine + 1)) assertEquals(packed.hex(), sent(packed, stub), "stub $stub: whole")
-        for (stub in listOf(1L, nine)) assertEquals(plain, sent(hex(plain), stub), "no trailer: as it is")
+        for (stub in listOf(1L, 7L, 9L, ten - 1)) assertEquals(plain, sent(packed, stub), "stub $stub: the package without icons, byte for byte")
+        for (stub in listOf(ten, ten + 1)) assertEquals(packed.hex(), sent(packed, stub), "stub $stub: whole")
+        for (stub in listOf(1L, ten)) assertEquals(plain, sent(hex(plain), stub), "no trailer: as it is")
         val damaged = t.getJSONArray("damaged")
         for (i in 0 until damaged.length()) damaged.getJSONObject(i).let { d ->
             val bad = packed.copyOf(d.optInt("keep", packed.size))
             if (d.has("flip")) d.getInt("flip").let { at -> bad[at] = (bad.u8(at) xor 0xFF).toByte() }
-            assertEquals(plain, sent(bad, nine - 1), "${d.getString("note")}: an older stub never sees it")
-            assertEquals(bad.hex(), sent(bad, nine), "${d.getString("note")}: stub 9 checks it itself")
+            assertEquals(plain, sent(bad, ten - 1), "${d.getString("note")}: an older stub never sees it")
+            assertEquals(bad.hex(), sent(bad, ten), "${d.getString("note")}: stub 10 checks it itself")
         }
         val huge = packed.copyOf().also { it.fill(0xFF.toByte(), 44, 48) }
         assertContentEquals(huge, stripTrailer(huge), "a size past the file is left for the stub to refuse")

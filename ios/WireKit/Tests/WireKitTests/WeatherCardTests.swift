@@ -32,11 +32,12 @@ import Testing
 
 @Test func weatherCardGate() {
     let apps = [0: "hello", 15: "weather"]
-    #expect(weatherCardSlot(stub: 9, apps: apps, granted: true) == 15)
+    #expect(weatherCardSlot(stub: 10, apps: apps, granted: true) == 15)
+    #expect(weatherCardSlot(stub: 9, apps: apps, granted: true) == nil, "stub 9, the face guard: no templates")
     #expect(weatherCardSlot(stub: 8, apps: apps, granted: true) == nil, "stub 8: no card, and no v1 in its place")
-    #expect(weatherCardSlot(stub: 9, apps: apps, granted: false) == nil)
-    #expect(weatherCardSlot(stub: 9, apps: [0: "hello", 1: "weather2"], granted: true) == nil)
-    #expect(weatherCardSlot(stub: 9, apps: [16: "weather", 0xFF: "weather"], granted: true) == nil, "slots 0…15 only")
+    #expect(weatherCardSlot(stub: 10, apps: apps, granted: false) == nil)
+    #expect(weatherCardSlot(stub: 10, apps: [0: "hello", 1: "weather2"], granted: true) == nil)
+    #expect(weatherCardSlot(stub: 10, apps: [16: "weather", 0xFF: "weather"], granted: true) == nil, "slots 0…15 only")
 }
 
 @Test func weatherCardSchedule() {

@@ -4,7 +4,7 @@ import java.time.Instant
 import java.time.ZonedDateTime
 import java.time.temporal.ChronoUnit
 
-// Weather's widget card, kept fresh by the phone (stub 9, docs/miniapp-rpc.md "Weather's card"): now and the next three
+// Weather's widget card, kept fresh by the phone (stub 10, docs/miniapp-rpc.md "Weather's card"): now and the next three
 // hours as a v2 `columns` record, the same bytes the Weather app writes from the same answer. It is built from the
 // `weather` RPC's own records, so both sides round, clamp and count the hours alike. Port of WireKit WeatherCard.swift.
 
@@ -63,7 +63,7 @@ fun weatherCard(records: List<ByteArray>, hour: Int): ByteArray? {
     return columnsRecord(listOf(WidgetColumn("Now", weatherIcon(now.u8(3), nightNow), "$degrees°")) + next)
 }
 
-/** Weather's slot when the phone may push its card: stub 9 or later, the app on the watch by its package name and
+/** Weather's slot when the phone may push its card: stub 10 or later, the app on the watch by its package name and
  *  holding the weather grant. Never a v1 card to an older stub: it would replace the app's own. */
 fun weatherCardSlot(stub: Long, apps: Map<Int, String>, granted: Boolean): Int? {
     if (!granted || !canPushColumns(stub)) return null

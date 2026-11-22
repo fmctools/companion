@@ -382,7 +382,7 @@ Delete from the Watch delete them.
 
 `PUSH` itself, from the phone (`Push.swift` / `wire/Push.kt`): `slot ‖ kind ‖ data`, reply `00` ok, `0A ‖ wait:u32`
 later, `07` no app in that slot, `01` bad request or a stub before 8, `02` NAND write failed. `kind` 0 takes a v1
-record of exactly 64 bytes and, from stub 9, a v2 record of up to 128 (short ones too); an older stub answers `01` to
+record of exactly 64 bytes and, from stub 10, a v2 record of up to 128 (short ones too); an older stub answers `01` to
 v2, so the phone reads the stub's version first.
 
 When they run: on Android in the foreground service's loop (`RpcService`, at least once a minute); on iOS in
@@ -397,7 +397,7 @@ three hours (`WeatherCard.swift` / `wire/WeatherCard.kt`; `weather_cards`, `weat
 `push-vectors.json`, their bytes from the SDK's `install.columns_record`). The watch app writes the same card: the
 same forecast at the same hour gives the same bytes on both, and the last write wins.
 
-Only when all hold: stub 9 or later, `weather` in one of slots 0–15, that package has the `weather` grant and its OS
+Only when all hold: stub 10 or later, `weather` in one of slots 0–15, that package has the `weather` grant and its OS
 permission is on. Else nothing is written, never a v1 text card in its place: it would replace the app's own.
 
 ```

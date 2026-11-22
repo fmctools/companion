@@ -40,11 +40,12 @@ class WeatherCardTest {
 
     @Test fun gate() {
         val apps = mapOf(0 to "hello", 15 to "weather")
-        assertEquals(15, weatherCardSlot(9, apps, true))
+        assertEquals(15, weatherCardSlot(10, apps, true))
+        assertNull(weatherCardSlot(9, apps, true), "stub 9, the face guard: no templates")
         assertNull(weatherCardSlot(8, apps, true), "stub 8: no card, and no v1 in its place")
-        assertNull(weatherCardSlot(9, apps, false))
-        assertNull(weatherCardSlot(9, mapOf(0 to "hello", 1 to "weather2"), true))
-        assertNull(weatherCardSlot(9, mapOf(16 to "weather", 0xFF to "weather"), true), "slots 0..15 only")
+        assertNull(weatherCardSlot(10, apps, false))
+        assertNull(weatherCardSlot(10, mapOf(0 to "hello", 1 to "weather2"), true))
+        assertNull(weatherCardSlot(10, mapOf(16 to "weather", 0xFF to "weather"), true), "slots 0..15 only")
     }
 
     @Test fun schedule() {

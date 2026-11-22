@@ -26,7 +26,7 @@ sealed class InstallError(message: String) : Exception(message) {
 }
 
 /** The first stub that takes a package's widget icon trailer ("WP2W", cmf-watch-sdk docs/app-icons.md). */
-private const val TRAILER_STUB = 9
+private const val TRAILER_STUB = 10
 
 /** The package without its widget icon trailer, the same bytes as one packed without icons: body_crc doesn't cover
  *  the trailer (package.strip_trailer). An older stub refuses any byte past what the header says. */
@@ -63,7 +63,7 @@ suspend fun installed(s: Requester, slots: Int): Map<Int, PackageHeader> {
 /**
  * Installs an app package into the slot of the same name, else the first free one, and a loader package (kind 1)
  * into slot L; returns the slot. `Busy` while that app (or the loader's menu) runs on the watch.
- * An app's widget icon trailer goes to stub 9 as it is (the stub checks it and drops a broken one); an older stub
+ * An app's widget icon trailer goes to stub 10 as it is (the stub checks it and drops a broken one); an older stub
  * gets the package without it.
  */
 suspend fun install(s: Requester, pkg: ByteArray, progress: (Double) -> Unit): Int {

@@ -1,5 +1,5 @@
 # push-vectors.json: PUSH (stub 8, cmf-watch-sdk docs/widget-push.md) as the phone sends it: for a watch app's
-# background jobs, and Weather's columns card (stub 9). The records come from the SDK's own install.widget_record and
+# background jobs, and Weather's columns card (stub 10). The records come from the SDK's own install.widget_record and
 # install.columns_record (needs the SDK's venv: pycryptodome; -B leaves that checkout as it is).
 #   export CMF_SDK=~/.herdr/worktrees/cmf-watch-sdk/widget-templates
 #   $CMF_SDK/.venv/bin/python -B tools/push-vectors.py > ios/WireKit/Tests/WireKitTests/push-vectors.json
@@ -110,7 +110,7 @@ cards = [
 icons = {0: [0], 1: [1, 2], 3: [45, 48], 4: [51, 53, 57], 5: [61, 67, 80, 82], 6: [71, 77, 85, 86], 7: [95, 96, 99],
          2: [3, 4, 44, 46, 47, 49, 50, 58, 60, 68, 70, 78, 79, 83, 84, 87, 94, 100, 255]}
 
-# an app with widget icons (docs/app-icons.md): stub 9 gets it whole, an older one without the trailer
+# an app with widget icons (docs/app-icons.md): stub 10 gets it whole, an older one without the trailer
 image = bytes(range(256)) + bytes(44)
 fields = {"name": "weather", "version": 7, "relocs": [4, 8], "abi_minor": 1}
 plain = package.pack(image, **fields)
