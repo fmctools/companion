@@ -35,6 +35,9 @@ sealed interface FaceRefusal {
 
     /** A Watch 3 Pro screen that needs more of the watch's memory than [SCREEN_BUDGET] even after [fitForWatch]. */
     data class ScreenOverBudget(val aod: Boolean, val bytes: Int) : FaceRefusal
+
+    /** A Watch 3 Pro face whose memory can't be counted ([measurable]). */
+    data object Unmeasurable : FaceRefusal
 }
 
 private class Node(val tag: Int, val children: List<Int>?)
@@ -94,18 +97,20 @@ fun faceName(d: ByteArray): String? {
 }
 
 /**
- * Every install goes through this gate. A file that does not parse is not refused here (the watch's installer
- * still gets to), exactly like the site. [watch3Pro]: the watch it goes to is one ([isWatch3Pro]); run [fitForWatch]
- * first, it shrinks what it can.
+ * Every install goes through this gate. It fails closed, exactly like the site: a file that does not parse goes to
+ * no watch, one that can't be measured to no Watch 3 Pro. [watch3Pro]: the watch it goes to is one ([isWatch3Pro]);
+ * run [fitForWatch] first, it shrinks what it can.
  */
 fun checkFace(d: ByteArray, watch3Pro: Boolean = false): FaceVerdict {
     if (d.size > 32 shl 20) return FaceVerdict.Refuse(FaceRefusal.TooLarge)
     if (faceName(d) == null) return FaceVerdict.Refuse(FaceRefusal.NotAWatchface)
-    val face = parseFace(d) ?: return FaceVerdict.Ok
+    val face = parseFace(d) ?: return FaceVerdict.Refuse(FaceRefusal.NotAWatchface)
+    val bin = runCatching { parseBin(d) }.getOrNull() ?: return FaceVerdict.Refuse(FaceRefusal.NotAWatchface)
     val aod = face.screens.firstOrNull { it.first == TAG_AOD }
     if (aod != null && TAG_PREVIEW !in aod.second) return FaceVerdict.Refuse(FaceRefusal.AodWithoutPreview)
     face.images.firstOrNull { (w, h) -> w > MAX_IMAGE_SIDE || h > MAX_IMAGE_SIDE }
         ?.let { (w, h) -> return FaceVerdict.Refuse(FaceRefusal.ImageTooBig(w, h)) }
+    if (watch3Pro && !measurable(bin)) return FaceVerdict.Refuse(FaceRefusal.Unmeasurable)
     if (watch3Pro) screenOverBudget(d)?.let { return FaceVerdict.Refuse(FaceRefusal.ScreenOverBudget(it.tag == TAG_AOD, it.bytes)) }
     face.images.firstOrNull { (w, h) -> w > SAFE_IMAGE_SIDE || h > SAFE_IMAGE_SIDE }
         ?.let { (w, h) -> return FaceVerdict.Confirm(w, h) }

@@ -17,6 +17,8 @@ object Vectors {
     val fit: JSONObject by lazy { load("face-fit-vectors.json") }
     /** Made by tools/push-vectors.py with the SDK's widget_record, columns_record and packer. */
     val push: JSONObject by lazy { load("push-vectors.json") }
+    /** Made by tools/face-gate-vectors.ts from the site's assertFlashable. */
+    val gate: JSONObject by lazy { load("face-gate-vectors.json") }
     /** Made by tools/rescue-vectors.ts from the site's Watch.authenticate, Watch.pair and Watch.factoryReset. */
     val rescue: JSONObject by lazy { load("rescue-vectors.json") }
 

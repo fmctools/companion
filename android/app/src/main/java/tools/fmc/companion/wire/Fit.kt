@@ -58,6 +58,28 @@ fun screenMemory(screen: FaceNode, res: List<FaceResource>): Pair<Int, ScreenFit
     }
 }
 
+/** The colour formats [decodedBytes] knows. */
+private val MEASURED = setOf(1, 4, 5, 13, 14, 24, 28)
+
+/** The tags that hold layers in every face of the catalog and both factory corpora (`CONTAINERS`). */
+private val CONTAINERS = setOf(0x21, 0x22, 0x30, 0x38, 0x60, 0x68, 0x70, 0x80, 0x81, 0x82, 0x83, 0x84, 0x85, 0x89)
+
+/**
+ * `measurable`: whether [screenBytes] sees everything the face shows. A screen or container that didn't parse into
+ * layers, a reference that leads to no resource (kept as `tail`) or an unknown format would count as zero bytes.
+ */
+fun measurable(face: FaceBin): Boolean {
+    fun ok(n: FaceNode, top: Boolean): Boolean {
+        if (n.tag == TAG_PREVIEW) return true
+        n.images?.let { images -> return images.all { face.resources[it].cf in MEASURED } }
+        val opaque = n.hex?.isNotEmpty() == true
+        if (n.tag == 0x01 && (opaque || n.tail?.any { it != 0.toByte() } == true)) return false
+        if (opaque && (top || n.tag in CONTAINERS)) return false
+        return n.subs?.all { ok(it, false) } ?: true
+    }
+    return face.screens.all { ok(it, true) }
+}
+
 class OverBudget(val screen: Int, val tag: Int, val bytes: Int)
 
 /** `overBudget`: the screens a Watch 3 Pro can't hold (index into `screens`), with what each needs. */

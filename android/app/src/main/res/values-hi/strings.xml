@@ -52,6 +52,7 @@
     <string name="refusal_aod">इस फ़ेस की ऑलवेज़-ऑन स्क्रीन का थंबनेल नहीं है। ऐसे फ़ेस से एक घड़ी की स्क्रीन झिलमिलाने लगी थी। इसे fmc.tools के एडिटर में खोलें और वहीं से इंस्टॉल करें।</string>
     <string name="refusal_image_too_big">इस फ़ेस की एक इमेज %1$d×%2$d px की है। %3$d px से बड़ी इमेज से घड़ी बार-बार रीस्टार्ट हो सकती है।</string>
     <string name="refusal_not_face">यह फ़ाइल वॉच फ़ेस नहीं है।</string>
+    <string name="refusal_unmeasurable">ऐप यह नहीं माप सकता कि इस फ़ेस को कितनी मेमोरी चाहिए, और मेमोरी कम पड़ने पर Watch 3 Pro बार-बार रीस्टार्ट होती है। घड़ी पर कुछ नहीं भेजा गया।</string>
     <string name="face_no_file">इस वॉच फ़ेस की कोई फ़ाइल नहीं है।</string>
     <string name="face_slot">फ़ेस %1$d</string>
     <string name="watch_full_error">घड़ी भर गई है। घड़ी पर एक फ़ेस हटाएँ (फ़ेस को दबाकर रखें, किसी एक को ऊपर स्वाइप करें) और फिर से कोशिश करें।</string>

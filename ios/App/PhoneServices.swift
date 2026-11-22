@@ -162,14 +162,14 @@ import WireKit
     /// The cached forecast as of `time`.
     private func forecast(at time: Date = .now) -> (now: WeatherNow, hours: WeatherHours?, days: [WeatherDay])? {
         guard let cached else { return nil }
-        let cal = Calendar.current, today = cal.startOfDay(for: .now)
+        let cal = Calendar.current
         let c = cached.now
         let now = WeatherNow(temp: c.temperature.converted(to: .celsius).value, code: wmo(c.condition),
                              wind: c.wind.speed.converted(to: .metersPerSecond).value,
                              humidity: Int((c.humidity * 100).rounded()),
                              ageMin: Int(-cached.at.timeIntervalSinceNow / 60))
         let days = cached.days.compactMap { d -> WeatherDay? in
-            let day = cal.dateComponents([.day], from: today, to: cal.startOfDay(for: d.date)).day ?? -1
+            let day = forecastDay(d.date, now: time, calendar: cal)
             guard day >= 0 else { return nil }
             return WeatherDay(day: day, min: d.lowTemperature.converted(to: .celsius).value,
                               max: d.highTemperature.converted(to: .celsius).value, code: wmo(d.condition),

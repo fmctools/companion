@@ -233,6 +233,13 @@ public func weatherRecord(_ w: WeatherNow) -> Data {
                 UInt8(clamping: w.ageMin)]
 }
 
+/// The `day` of a daily forecast whose `start` is midnight at the place, counted from today on the phone's clock.
+/// The day's noon keeps its date within 12 hours of the phone's zone; the place's zone is not sent to the watch.
+public func forecastDay(_ start: Date, now: Date, calendar: Calendar) -> Int {
+    calendar.dateComponents([.day], from: calendar.startOfDay(for: now),
+                            to: calendar.startOfDay(for: start + 12 * 3600)).day ?? -1
+}
+
 /// `1 ‖ day:i8 ‖ min:i8 ‖ max:i8 ‖ code ‖ precip`
 public func weatherRecord(_ w: WeatherDay) -> Data {
     Data([1, i8(w.day), i8(Int(w.min.rounded())), i8(Int(w.max.rounded())), UInt8(clamping: w.code),

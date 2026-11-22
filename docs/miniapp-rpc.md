@@ -230,6 +230,8 @@ give the position away, and the watch gets none from `weather`.
 
 On Android hours and days are on the phone's clock also when the forecast's place has another timezone: Open-Meteo is
 asked in the phone's zone, so a day's range covers the phone's day, and the place's zone isn't sent to the watch.
+On iOS WeatherKit's days start at midnight at the place; a day's `day` is the phone's date of its noon, which holds
+while the place is within 12 hours of the phone's zone.
 
 A companion from before `hours` (2026-11-20): Android answers `BAD_REQUEST` to two bytes of args, iOS reads `days`
 and answers without the hourly record. An app asks again with `days` alone, or shows no hours.
