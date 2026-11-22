@@ -216,21 +216,23 @@ class PhoneServices(private val context: Context, private val grants: Grants) : 
         return (found.locality ?: found.subAdminArea ?: found.adminArea ?: "").also { places[cell] = it }
     }
 
-    private class Forecast(val at: Long, val json: JSONObject)
+    /** [zone]: the phone's when it was fetched, whose days the daily ranges cover. */
+    private class Forecast(val at: Long, val zone: java.time.ZoneId, val json: JSONObject)
 
     /** Open-Meteo, cached 30 min; a stale copy when the network is down. */
     private suspend fun weather(days: Int, hours: Int): List<ByteArray> {
         val now = System.currentTimeMillis()
-        val f = forecast?.takeIf { now - it.at < 30 * 60_000 }
-            ?: runCatching { Forecast(now, fetchForecast()) }.getOrNull()?.also { forecast = it }
+        val zone = java.time.ZoneId.systemDefault()
+        val f = forecast?.takeIf { now - it.at < 30 * 60_000 && it.zone == zone }
+            ?: runCatching { Forecast(now, zone, fetchForecast(zone)) }.getOrNull()?.also { forecast = it }
             ?: forecast ?: throw RpcError(RpcStatus.UNAVAILABLE)
         return forecastRecords(f.json, f.at, ZonedDateTime.now(), days, hours)
     }
 
     // ponytail: one cached forecast for wherever the phone was; it follows a move after 30 min
-    private suspend fun fetchForecast(): JSONObject {
+    private suspend fun fetchForecast(zone: java.time.ZoneId): JSONObject {
         val (l, _) = location()
-        val (code, body) = fetch(forecastUrl(l.latitude, l.longitude))
+        val (code, body) = fetch(forecastUrl(l.latitude, l.longitude, zone))
         if (code != 200) throw RpcError(RpcStatus.UNAVAILABLE)
         return JSONObject(String(body))
     }
