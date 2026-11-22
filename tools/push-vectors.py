@@ -6,7 +6,7 @@
 import json, os, sys
 
 sys.path.insert(0, os.path.join(os.path.expanduser(os.environ.get("CMF_SDK", "~/Developer/pet/cmf-watch-sdk")), "src"))
-from wp2apps import install  # noqa: E402
+from wp2apps import install, package  # noqa: E402
 
 widgets = [("USD", "92.41"), ("Погода в Москве сегодня", "−3° снег, ветер 5 м/с\nзавтра −7°"), ("", ""),
            ("A title of exactly 23 b", "a value that is longer than thirty-nine bytes for sure")]
@@ -37,6 +37,26 @@ for c in bad_columns:
     raise SystemExit(f"columns_record took {c}")
 card = install.columns_record(GOLDEN)
 
+# an app with widget icons (docs/app-icons.md): stub 9 gets it whole, an older one without the trailer
+image = bytes(range(256)) + bytes(44)
+fields = {"name": "weather", "version": 7, "relocs": [4, 8], "abi_minor": 1}
+plain = package.pack(image, **fields)
+packed = package.pack(image, **fields, widget_icons=[bytes([i]) * package.WIDGET_ICON_BYTES for i in (0x11, 0x22)])
+assert package.strip_trailer(packed) == plain
+damaged = [{"note": "a pixel", "flip": len(packed) - 1}, {"note": "the magic", "flip": len(plain)},
+           {"note": "its CRC", "flip": len(plain) + 8}, {"note": "cut short", "keep": len(packed) - 100},
+           {"note": "a cut head", "keep": len(plain) + 5}]
+for d in damaged:
+    bad = bytearray(packed[:d.get("keep", len(packed))])
+    if "flip" in d:
+        bad[d["flip"]] ^= 0xFF
+    assert package.strip_trailer(bytes(bad)) == plain
+    try:
+        package.parse(bytes(bad))
+    except ValueError:
+        continue
+    raise SystemExit(f"the packer took a damaged trailer: {d['note']}")
+
 blob_records = [
     {"records": ["c8000800", "7b2274223a32317d"], "blob": "04c8000800087b2274223a32317d"},
     {"records": ["aa" * 100, "bb" * 30], "blob": "64" + "aa" * 100, "note": "the second record doesn't fit: whole records only"},
@@ -56,6 +76,7 @@ out = {
     "columns_bad": [named(c) for c in bad_columns],
     "replies": [{"hex": "00", "ok": True}, {"hex": "0a60ea0000", "later_ms": 60000}, {"hex": "07", "refused": 7},
                 {"hex": "01", "refused": 1}, {"hex": "02", "refused": 2}, {"hex": "", "refused": 255}],
+    "trailer": {"stub": package.STUB_TRAILER, "package": packed.hex(), "plain": plain.hex(), "damaged": damaged},
     "blob": blob_records,
     "http_widget": [
         {"records": ["c8000e00", "5553440a39322e3431206576656e"], "title": "USD", "value": "92.41 even"},

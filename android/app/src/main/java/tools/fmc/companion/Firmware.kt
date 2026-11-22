@@ -325,7 +325,8 @@ suspend fun kRun(context: Context, model: AppModel, body: suspend (KSession) -> 
     if (services) RpcService.stop(context)
     val link = BleLink(context)
     try {
-        withTimeout(120_000) {
+        // a full app with 16 widget icons is about 210 KB, so some 1650 requests
+        withTimeout(240_000) {
             link.connect()
             // ponytail: K read fresh each time (a few seconds) rather than trying the cached one first
             val (session, secret) = KSession.open(link, register = false)

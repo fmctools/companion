@@ -25,6 +25,17 @@ sealed class InstallError(message: String) : Exception(message) {
     data class Refused(val status: Int) : InstallError("refused (%02X)".format(status))
 }
 
+/** The first stub that takes a package's widget icon trailer ("WP2W", cmf-watch-sdk docs/app-icons.md). */
+private const val TRAILER_STUB = 9
+
+/** The package without its widget icon trailer, the same bytes as one packed without icons: body_crc doesn't cover
+ *  the trailer (package.strip_trailer). An older stub refuses any byte past what the header says. */
+internal fun stripTrailer(p: ByteArray): ByteArray {
+    if (p.size < HEADER_SIZE) return p
+    val end = HEADER_SIZE + p.le32(36) + 4 * p.le32(44)
+    return if (end < p.size) p.copyOf(end.toInt()) else p
+}
+
 /** The package header (`package.HEADER`: magic "WP2A", abi, kind, abi_minor, name[24], version, size, entry,
  * relocations, crc, …). */
 fun parseHeader(d: ByteArray): PackageHeader? {
@@ -52,22 +63,27 @@ suspend fun installed(s: Requester, slots: Int): Map<Int, PackageHeader> {
 /**
  * Installs an app package into the slot of the same name, else the first free one, and a loader package (kind 1)
  * into slot L; returns the slot. `Busy` while that app (or the loader's menu) runs on the watch.
+ * An app's widget icon trailer goes to stub 9 as it is (the stub checks it and drops a broken one); an older stub
+ * gets the package without it.
  */
 suspend fun install(s: Requester, pkg: ByteArray, progress: (Double) -> Unit): Int {
     val header = parseHeader(pkg)?.takeIf { it.kind == 0 || it.kind == 1 } ?: throw InstallError.NotAPackage
+    var file = pkg
     val slot = if (header.kind == 1) LOADER_SLOT else {
-        val slots = appSlots(stubVersion(s))
+        val stub = stubVersion(s)
+        if (stub < TRAILER_STUB) file = stripTrailer(pkg)
+        val slots = appSlots(stub)
         val used = installed(s, slots)
         used.entries.firstOrNull { it.key < slots && it.value.name == header.name }?.key
             ?: (0 until slots).firstOrNull { it !in used }
             ?: throw InstallError.NoFreeSlot(slots)
     }
-    check(s.call(Cmd.BEGIN, buf { u8(slot); le32(pkg.size.toLong()); le32(crc32(pkg)) }))
-    for (off in pkg.indices step DATA_MAX) {
-        val end = minOf(off + DATA_MAX, pkg.size)
-        val r = check(s.call(Cmd.DATA, buf { le32(off.toLong()); add(pkg.copyOfRange(off, end)) }))
+    check(s.call(Cmd.BEGIN, buf { u8(slot); le32(file.size.toLong()); le32(crc32(file)) }))
+    for (off in file.indices step DATA_MAX) {
+        val end = minOf(off + DATA_MAX, file.size)
+        val r = check(s.call(Cmd.DATA, buf { le32(off.toLong()); add(file.copyOfRange(off, end)) }))
         if (r.size != 4 || r.le32(0) != end.toLong()) throw InstallError.Refused(0xFE)
-        progress(end.toDouble() / pkg.size)
+        progress(end.toDouble() / file.size)
     }
     check(s.call(Cmd.END, bytes(0)))
     return slot

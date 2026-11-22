@@ -44,6 +44,17 @@ public enum InstallError: Error, Equatable {
     case refused(UInt8)
 }
 
+/// The first stub that takes a package's widget icon trailer ("WP2W", cmf-watch-sdk docs/app-icons.md).
+let trailerStub: UInt32 = 9
+
+/// The package without its widget icon trailer, the same bytes as one packed without icons: body_crc doesn't cover
+/// the trailer (package.strip_trailer). An older stub refuses any byte past what the header says.
+func stripTrailer(_ p: Data) -> Data {
+    guard p.count >= headerSize else { return p }
+    let end = UInt64(headerSize) + UInt64(p.le(UInt32.self, at: 36)) + 4 * UInt64(p.le(UInt32.self, at: 44))
+    return end < UInt64(p.count) ? Data(p.prefix(Int(end))) : p
+}
+
 /// The package header (`package.HEADER`: magic "WP2A", abi, kind, abi_minor, name[24], version, size, entry,
 /// relocations, crc, …).
 public func parseHeader(_ d: Data) -> PackageHeader? {
@@ -71,30 +82,35 @@ public func installed(_ s: Requester, slots: Int) async throws -> [Int: PackageH
 
 /// Installs an app package into the slot of the same name, else the first free one, and a loader package
 /// (kind 1) into slot L; returns the slot. `busy` while that app (or the loader's menu) runs on the watch.
+/// An app's widget icon trailer goes to stub 9 as it is (the stub checks it and drops a broken one); an older stub
+/// gets the package without it.
 public func install(_ s: Requester, package: Data, progress: @Sendable (Double) -> Void) async throws -> Int {
     guard let pkg = parseHeader(package), pkg.kind == 0 || pkg.kind == 1 else { throw InstallError.notAPackage }
     let slot: Int
+    var file = package
     if pkg.kind == 1 {
         slot = loaderSlot
     } else {
-        let slots = appSlots(stub: try await stubVersion(s))
+        let stub = try await stubVersion(s)
+        if stub < trailerStub { file = stripTrailer(package) }
+        let slots = appSlots(stub: stub)
         let used = try await installed(s, slots: slots)
         guard let free = used.first(where: { $0.key < slots && $0.value.name == pkg.name })?.key
             ?? (0..<slots).first(where: { used[$0] == nil }) else { throw InstallError.noFreeSlot(slots: slots) }
         slot = free
     }
     var begin = Data([UInt8(slot)])
-    begin.le(UInt32(package.count))
-    begin.le(crc32(package))
+    begin.le(UInt32(file.count))
+    begin.le(crc32(file))
     _ = try check(try await s.call(Cmd.begin, begin))
-    for off in stride(from: 0, to: package.count, by: dataMax) {
+    for off in stride(from: 0, to: file.count, by: dataMax) {
         var d = Data()
         d.le(UInt32(off))
-        let end = min(off + dataMax, package.count)
-        d += package[package.startIndex + off..<package.startIndex + end]
+        let end = min(off + dataMax, file.count)
+        d += file[file.startIndex + off..<file.startIndex + end]
         let r = try check(try await s.call(Cmd.data, d))
         guard r.count == 4, r.le(UInt32.self, at: 0) == UInt32(end) else { throw InstallError.refused(0xFE) }
-        progress(Double(end) / Double(package.count))
+        progress(Double(end) / Double(file.count))
     }
     _ = try check(try await s.call(Cmd.end, Data([0])))
     return slot
