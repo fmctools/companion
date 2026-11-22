@@ -227,6 +227,9 @@ min(`hours`, what the source has), read from the record's length. An entry's `te
 probability in bits 0–6 and bit 7 set when that hour is night. There are no sunrise or sunset times: they would
 give the position away, and the watch gets none from `weather`.
 
+On Android hours and days are on the phone's clock also when the forecast's place has another timezone: Open-Meteo is
+asked in the phone's zone, so a day's range covers the phone's day, and the place's zone isn't sent to the watch.
+
 A companion from before `hours` (2026-11-20): Android answers `BAD_REQUEST` to two bytes of args, iOS reads `days`
 and answers without the hourly record. An app asks again with `days` alone, or shows no hours.
 
