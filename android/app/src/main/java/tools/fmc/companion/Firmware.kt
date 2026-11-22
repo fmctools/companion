@@ -326,7 +326,8 @@ suspend fun kRun(context: Context, model: AppModel, body: suspend (KSession) -> 
     if (services) RpcService.stop(context)
     val link = BleLink(context)
     try {
-        withTimeout(120_000) {
+        // the stub takes a package of up to 256 KB: some 2050 requests, over two minutes at 60 ms each
+        withTimeout(240_000) {
             link.connect()
             // ponytail: K read fresh each time (a few seconds) rather than trying the cached one first
             kLock.withLock {
