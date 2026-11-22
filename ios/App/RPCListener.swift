@@ -33,13 +33,16 @@ actor KLock {
 @MainActor final class RPCListener {
     static let shared = RPCListener()
     private var task: Task<Void, Never>?
+    /// An install, a face or a firmware update has the watch: off until it starts us again, whatever a check reads.
+    private var stopped = false
     private var link: BLELink?
     /// slot → package name, from INFO
     private var apps: [Int: String] = [:]
-    /// The stub's release, from the same read: PUSH needs 7.
+    /// The stub's release, from the same read: PUSH needs 8, Weather's card 9.
     private var stub: UInt32 = 1
 
     func start() {
+        stopped = false
         guard task == nil else { return }
         task = Task {
             while !Task.isCancelled {
@@ -50,6 +53,7 @@ actor KLock {
     }
 
     func stop() {
+        stopped = true
         task?.cancel()
         task = nil
         link?.disconnect()
@@ -61,7 +65,7 @@ actor KLock {
         guard let state else { return }
         apps = state.apps.mapValues(\.name)
         stub = state.stub.version
-        if task == nil { start() }
+        if task == nil, !stopped { start() }
     }
 
     /// true: stock firmware, nothing to listen to.
@@ -88,8 +92,10 @@ actor KLock {
             _ = try await KLock.shared.run { try await session.ping() } // registers: the stub sends us EVENTs
             _ = try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound])
             DevLog.shared.log("listening")
+            var card = CardSchedule()
             while up, !Task.isCancelled {
                 await runDueJobs(session)
+                await refreshWeatherCard(session, &card)
                 guard let m = try? await session.recvFrom(timeout: .seconds(5)) else { continue }
                 await handle(m.data, slot: Int(m.slot), session)
             }
@@ -136,6 +142,42 @@ actor KLock {
         } catch {
             DevLog.shared.log("\(line): push failed: \(error)")
         }
+    }
+
+    /// Weather's widget card (docs/miniapp-rpc.md, "Weather's card"): on connect and when the hour changes, in the
+    /// foreground and in the wakes this loop gets anyway. No prompt, no location fix, no INFO: that would drop an
+    /// install another host has open, so the slot is from the read on connect.
+    private func refreshWeatherCard(_ session: KSession, _ card: inout CardSchedule) async {
+        let now = Date.now
+        guard let hour = Calendar.current.dateInterval(of: .hour, for: now)?.start, card.due(hour: hour, now: now),
+              cardSlot() != nil else { return }
+        let bg = UIApplication.shared.beginBackgroundTask(withName: "weather-card")
+        defer { UIApplication.shared.endBackgroundTask(bg) }
+        guard let data = await PhoneServices.shared.weatherCardRecord() else {
+            card.settle(nil, card: nil, hour: hour, now: .now)
+            return DevLog.shared.log("weather card: no forecast")
+        }
+        // the fetch took a while: an install may have stopped us, the app or its grant may be gone
+        guard !Task.isCancelled, let slot = cardSlot(), !card.unchanged(data, hour: hour) else { return }
+        do {
+            let result = try await KLock.shared.run {
+                try Task.checkCancellation() // an install held the lock
+                return try await push(session, slot: slot, kind: .widget, data: data)
+            }
+            card.settle(result, card: data, hour: hour, now: .now)
+            DevLog.shared.log("weather card to slot \(slot): \(result)")
+        } catch {
+            card.settle(nil, card: data, hour: hour, now: .now)
+            DevLog.shared.log("weather card: push failed: \(error)")
+        }
+    }
+
+    /// Where the card may go now; nil also while the watch installs a firmware.
+    private func cardSlot() -> Int? {
+        guard !WatchModel.shared.installing else { return nil }
+        let phone = PhoneServices.shared
+        let granted = phone.grants(weatherPackage)["weather"] == true && phone.osAllowed("weather")
+        return weatherCardSlot(stub: stub, apps: apps, granted: granted)
     }
 
     private func handle(_ message: Data, slot: Int, _ session: KSession) async {
