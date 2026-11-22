@@ -116,19 +116,26 @@ private struct OrderVectors: Decodable {
     }
 }
 
-/// push-vectors.json: tools/push-vectors.py, the widget record from the SDK's own install.widget_record.
+/// push-vectors.json: tools/push-vectors.py, the records from the SDK's own widget_record and columns_record.
 private struct PushVectors: Decodable {
     struct W: Decodable { let title: String; let value: String; let hex: String }
     struct P: Decodable { let slot: Int; let kind: Int; let data: String; let hex: String }
     struct R: Decodable { let hex: String; let ok: Bool?; let later_ms: UInt32?; let refused: UInt8? }
     struct B: Decodable { let records: [String]; let blob: String? }
     struct H: Decodable { let records: [String]; let title: String?; let value: String?; let none: Bool? }
+    struct C: Decodable { let caption: String; let icon: Int?; let value: String }
+    struct Columns: Decodable { let note: String; let columns: [C]; let hex: String }
     let command: Int; let widget: [W]; let payload: [P]; let replies: [R]; let blob: [B]; let http_widget: [H]
+    let columns_stub: UInt32; let columns: [Columns]; let columns_bad: [[C]]
+
+    static func load() throws -> PushVectors {
+        let url = try #require(Bundle.module.url(forResource: "push-vectors", withExtension: "json"))
+        return try JSONDecoder().decode(PushVectors.self, from: Data(contentsOf: url))
+    }
 }
 
 @Test func pushMatchesSDK() throws {
-    let url = try #require(Bundle.module.url(forResource: "push-vectors", withExtension: "json"))
-    let p = try JSONDecoder().decode(PushVectors.self, from: Data(contentsOf: url))
+    let p = try PushVectors.load()
     #expect(p.command == Int(Cmd.push))
     for w in p.widget { #expect(widgetRecord(title: w.title, value: w.value) == hex(w.hex), "\(w.title)") }
     for c in p.payload { #expect(pushPayload(slot: c.slot, kind: PushKind(rawValue: c.kind)!, data: hex(c.data)) == hex(c.hex)) }
@@ -141,4 +148,14 @@ private struct PushVectors: Decodable {
         #expect(jobWidget(h.records.map(hex)) == (h.none == true ? nil : widgetRecord(title: h.title!, value: h.value!)))
     }
     #expect([6, 7, 8].map { canPush(stub: $0) } == [false, false, true])
+}
+
+@Test func columnsMatchSDK() throws {
+    let p = try PushVectors.load()
+    func columns(_ c: [PushVectors.C]) -> [WidgetColumn] {
+        c.map { WidgetColumn(caption: $0.caption, icon: $0.icon, value: $0.value) }
+    }
+    for c in p.columns { #expect(columnsRecord(columns(c.columns)) == hex(c.hex), "\(c.note)") }
+    for c in p.columns_bad { #expect(columnsRecord(columns(c)) == nil) }
+    #expect(!canPushColumns(stub: p.columns_stub - 1) && canPushColumns(stub: p.columns_stub))
 }

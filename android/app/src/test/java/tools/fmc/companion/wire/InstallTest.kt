@@ -93,9 +93,9 @@ class InstallTest {
         }
     }
 
-    /** push-vectors.json: tools/push-vectors.py, the widget record from the SDK's own install.widget_record. */
+    /** push-vectors.json: tools/push-vectors.py, the records from the SDK's own widget_record and columns_record. */
     @Test fun pushMatchesSdk() {
-        val p = org.json.JSONObject(java.io.File(System.getProperty("vectors"), "push-vectors.json").readText())
+        val p = Vectors.push
         fun objs(k: String) = p.getJSONArray(k).let { a -> (0 until a.length()).map(a::getJSONObject) }
         fun recs(o: org.json.JSONObject) = o.getJSONArray("records").let { a -> (0 until a.length()).map { hex(a.getString(it)) } }
         assertEquals(Cmd.PUSH, p.getInt("command"))
@@ -115,6 +115,19 @@ class InstallTest {
             assertEquals(want, jobWidget(recs(it))?.hex(), it.toString())
         }
         assertEquals(listOf(false, false, true), listOf(6L, 7L, 8L).map(::canPush))
+    }
+
+    @Test fun columnsMatchSdk() {
+        fun columns(a: org.json.JSONArray) = (0 until a.length()).map(a::getJSONObject)
+            .map { WidgetColumn(it.getString("caption"), if (it.isNull("icon")) null else it.getInt("icon"), it.getString("value")) }
+        val ok = Vectors.push.getJSONArray("columns")
+        for (i in 0 until ok.length()) ok.getJSONObject(i).let {
+            assertEquals(it.getString("hex"), columnsRecord(columns(it.getJSONArray("columns")))?.hex(), it.getString("note"))
+        }
+        val bad = Vectors.push.getJSONArray("columns_bad")
+        for (i in 0 until bad.length()) assertNull(columnsRecord(columns(bad.getJSONArray(i))))
+        val first = Vectors.push.getLong("columns_stub")
+        assertEquals(listOf(false, true), listOf(first - 1, first).map(::canPushColumns))
     }
 
     @Test fun bytesHelpers() {
