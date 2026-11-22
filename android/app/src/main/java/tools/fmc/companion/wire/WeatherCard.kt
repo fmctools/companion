@@ -1,6 +1,7 @@
 package tools.fmc.companion.wire
 
-import java.time.LocalDateTime
+import java.time.Instant
+import java.time.ZonedDateTime
 import java.time.temporal.ChronoUnit
 
 // Weather's widget card, kept fresh by the phone (stub 9, docs/miniapp-rpc.md "Weather's card"): now and the next three
@@ -12,9 +13,10 @@ const val WEATHER_PACKAGE = "weather"
 
 /** A forecast's hours from the one that contains [now], counted on the phone's clock (a cached copy may start hours
  *  back), and that hour (0–23). An empty list when every hour of it has passed. */
-fun currentHours(forecast: List<Pair<LocalDateTime, WeatherHour>>, now: LocalDateTime): Pair<Int, List<WeatherHour>> {
-    val thisHour = now.truncatedTo(ChronoUnit.HOURS)
-    return thisHour.hour to forecast.filter { !it.first.isBefore(thisHour) }.map { it.second }
+fun currentHours(forecast: List<Pair<Instant, WeatherHour>>, now: ZonedDateTime): Pair<Int, List<WeatherHour>> {
+    val thisHour = now.truncatedTo(ChronoUnit.HOURS) // keeps the offset, so the repeated hour of a clock change counts once
+    val from = thisHour.toInstant()
+    return thisHour.hour to forecast.filter { !it.first.isBefore(from) }.map { it.second }
 }
 
 /** The icon's index in Weather's package, its `model::Icon` order: clear, partly, cloud, fog, drizzle, rain, snow,

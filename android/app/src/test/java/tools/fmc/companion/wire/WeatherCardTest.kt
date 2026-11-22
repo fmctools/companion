@@ -1,6 +1,7 @@
 package tools.fmc.companion.wire
 
 import java.time.LocalDateTime
+import java.time.ZoneOffset
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -13,15 +14,15 @@ class WeatherCardTest {
         val cards = Vectors.push.getJSONArray("weather_cards")
         for (k in 0 until cards.length()) {
             val c = cards.getJSONObject(k)
-            val start = LocalDateTime.parse(c.getString("start"))
+            val start = LocalDateTime.parse(c.getString("start")).toInstant(ZoneOffset.UTC)
             val hours = c.getJSONArray("hours")
             val forecast = (0 until hours.length()).map {
                 val h = hours.getJSONArray(it)
-                start.plusHours(it.toLong()) to WeatherHour(h.getDouble(0), h.getInt(1), 0, false)
+                start.plusSeconds(it * 3600L) to WeatherHour(h.getDouble(0), h.getInt(1), 0, false)
             }
             val records = mutableListOf<ByteArray>()
             c.optJSONArray("now")?.let { records += weatherNow(it.getDouble(0), it.getInt(1), 0.0, 0, 0) }
-            val (hour, current) = currentHours(forecast, LocalDateTime.parse(c.getString("at")))
+            val (hour, current) = currentHours(forecast, LocalDateTime.parse(c.getString("at")).atZone(ZoneOffset.UTC))
             weatherHours(hour, current, 4)?.let { records += it }
             assertEquals(if (c.isNull("hex")) null else c.getString("hex"), weatherCard(records)?.hex(), c.getString("note"))
         }
