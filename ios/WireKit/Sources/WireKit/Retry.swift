@@ -22,3 +22,13 @@ public func retry(every: Duration, for limit: Duration,
 public func recheckDue(idle: Bool, busy: Bool, last: Date?, now: Date, gap: TimeInterval = 30) -> Bool {
     !idle && !busy && last.map { now.timeIntervalSince($0) >= gap } ?? true
 }
+
+/// How many installs, face and firmware sessions have the watch: the phone's listener stays off until the last one is
+/// done, whatever else asks it to start meanwhile.
+public struct WatchHolds: Sendable {
+    private var count = 0
+    public init() {}
+    public var free: Bool { count == 0 }
+    public mutating func take() { count += 1 }
+    public mutating func release() { count = max(0, count - 1) }
+}

@@ -5,6 +5,8 @@ import android.util.Log
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import tools.fmc.companion.wire.DialCount
@@ -41,18 +43,20 @@ suspend fun readWatch(context: Context, store: SecureStore): LoaderState? {
         return withTimeout(30_000) {
             link.connect()
             AppOrder.watch(context, link.watchId)
-            val account = "k-${link.watchId}"
-            val cached = store[account]
-            val (session, secret) = KSession.open(link, cached, register = false)
-            store[account] = secret
-            readLoader(session)?.let { return@withTimeout it }
-            // K changes with a factory reset: a cached one that gets no answer is read again once, and only asked
-            // again when it really changed (FMC Systems' review of the iOS app: no second 2.5 s on stock watches)
-            if (cached == null) return@withTimeout null
-            val (fresh, newSecret) = KSession.open(link, register = false)
-            if (newSecret == cached) return@withTimeout null
-            store[account] = newSecret
-            readLoader(fresh)
+            kLock.withLock {
+                val account = "k-${link.watchId}"
+                val cached = store[account]
+                val (session, secret) = KSession.open(link, cached, register = false)
+                store[account] = secret
+                readLoader(session)?.let { return@withTimeout it }
+                // K changes with a factory reset: a cached one that gets no answer is read again once, and only asked
+                // again when it really changed (FMC Systems' review of the iOS app: no second 2.5 s on stock watches)
+                if (cached == null) return@withTimeout null
+                val (fresh, newSecret) = KSession.open(link, register = false)
+                if (newSecret == cached) return@withTimeout null
+                store[account] = newSecret
+                readLoader(fresh)
+            }
         }
     } finally {
         link.disconnect()
@@ -162,6 +166,7 @@ internal suspend fun <T> withStockSession(
     body: suspend (StockSession, String) -> T,
 ): T {
     val link = BleLink(context)
+    WatchLink.using.incrementAndGet()
     try {
         withTimeout(30_000) { link.connect(scan = true) }
         before(link)
@@ -183,6 +188,7 @@ internal suspend fun <T> withStockSession(
         }
         return body(session, "$watch") // the keys were "dials-$watch" before: null stays "null"
     } finally {
+        WatchLink.using.decrementAndGet()
         link.disconnect()
     }
 }
@@ -307,7 +313,15 @@ suspend fun installFaceOnWatch(
     return fitted.compressed
 }
 
-/** The services' link has the watch again after a drop; AppModel reads it again (debounced). */
+/** One K exchange at a time across the app's sessions (a reply carries no request id), as iOS's KLock. */
+val kLock = Mutex()
+
 object WatchLink {
+    /** Installs, stock sessions (faces, OTA) and the wait for a flashed watch under way: Weather's card keeps out.
+     *  A count, since stopping RpcService takes a moment and the UI can start it again meanwhile. */
+    val using = java.util.concurrent.atomic.AtomicInteger()
+    val busy get() = using.get() > 0
+
+    /** The services' link has the watch again after a drop; AppModel reads it again (debounced). */
     val back = kotlinx.coroutines.flow.MutableSharedFlow<Unit>(extraBufferCapacity = 1)
 }

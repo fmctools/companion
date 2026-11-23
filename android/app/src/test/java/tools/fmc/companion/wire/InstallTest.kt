@@ -5,6 +5,7 @@ import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -93,9 +94,9 @@ class InstallTest {
         }
     }
 
-    /** push-vectors.json: tools/push-vectors.py, the widget record from the SDK's own install.widget_record. */
+    /** push-vectors.json: tools/push-vectors.py, the records from the SDK's own widget_record and columns_record. */
     @Test fun pushMatchesSdk() {
-        val p = org.json.JSONObject(java.io.File(System.getProperty("vectors"), "push-vectors.json").readText())
+        val p = Vectors.push
         fun objs(k: String) = p.getJSONArray(k).let { a -> (0 until a.length()).map(a::getJSONObject) }
         fun recs(o: org.json.JSONObject) = o.getJSONArray("records").let { a -> (0 until a.length()).map { hex(a.getString(it)) } }
         assertEquals(Cmd.PUSH, p.getInt("command"))
@@ -115,6 +116,56 @@ class InstallTest {
             assertEquals(want, jobWidget(recs(it))?.hex(), it.toString())
         }
         assertEquals(listOf(false, false, true), listOf(6L, 7L, 8L).map(::canPush))
+    }
+
+    @Test fun columnsMatchSdk() {
+        fun columns(a: org.json.JSONArray) = (0 until a.length()).map(a::getJSONObject)
+            .map { WidgetColumn(it.getString("caption"), if (it.isNull("icon")) null else it.getInt("icon"), it.getString("value")) }
+        val ok = Vectors.push.getJSONArray("columns")
+        for (i in 0 until ok.length()) ok.getJSONObject(i).let {
+            assertEquals(it.getString("hex"), columnsRecord(columns(it.getJSONArray("columns")))?.hex(), it.getString("note"))
+        }
+        val bad = Vectors.push.getJSONArray("columns_bad")
+        for (i in 0 until bad.length()) assertNull(columnsRecord(columns(bad.getJSONArray(i))))
+        val first = Vectors.push.getLong("columns_stub")
+        assertEquals(listOf(false, true), listOf(first - 1, first).map(::canPushColumns))
+        assertEquals(10L, first)
+        assertFalse(canPushColumns(9), "stub 9, the face guard, refuses v2")
+    }
+
+    /** What the watch receives for [file] from a phone that sees [stub]; BEGIN's size and CRC must be of those bytes. */
+    private suspend fun sent(file: ByteArray, stub: Long): String {
+        val f = FakeInstaller()
+        if (stub > 1) f.stub = buf { u8(0); le32(stub); u8(4) }
+        var seen = 0.0
+        install(f, file) { seen = it }
+        val got = f.calls.filter { it.first == Cmd.DATA }.fold(ByteArray(0)) { a, c -> a + c.second.copyOfRange(4, c.second.size) }
+        val begin = f.calls.first { it.first == Cmd.BEGIN }.second
+        assertEquals(listOf(got.size.toLong(), crc32(got)), listOf(begin.le32(1), begin.le32(5)))
+        assertEquals(1.0, seen)
+        return got.hex()
+    }
+
+    @Test fun widgetIconTrailer() = runBlocking {
+        val t = Vectors.push.getJSONObject("trailer")
+        val packed = hex(t.getString("package"))
+        val plain = t.getString("plain")
+        val ten = t.getLong("stub")
+        assertEquals(10L, ten, "stub 9, the face guard, refuses extra bytes at END")
+        assertEquals(parseHeader(hex(plain)), parseHeader(packed))
+        assertEquals("weather", parseHeader(packed)?.name)
+        for (stub in listOf(1L, 7L, 9L, ten - 1)) assertEquals(plain, sent(packed, stub), "stub $stub: the package without icons, byte for byte")
+        for (stub in listOf(ten, ten + 1)) assertEquals(packed.hex(), sent(packed, stub), "stub $stub: whole")
+        for (stub in listOf(1L, ten)) assertEquals(plain, sent(hex(plain), stub), "no trailer: as it is")
+        val damaged = t.getJSONArray("damaged")
+        for (i in 0 until damaged.length()) damaged.getJSONObject(i).let { d ->
+            val bad = packed.copyOf(d.optInt("keep", packed.size))
+            if (d.has("flip")) d.getInt("flip").let { at -> bad[at] = (bad.u8(at) xor 0xFF).toByte() }
+            assertEquals(plain, sent(bad, ten - 1), "${d.getString("note")}: an older stub never sees it")
+            assertEquals(bad.hex(), sent(bad, ten), "${d.getString("note")}: stub 10 checks it itself")
+        }
+        val huge = packed.copyOf().also { it.fill(0xFF.toByte(), 44, 48) }
+        assertContentEquals(huge, stripTrailer(huge), "a size past the file is left for the stub to refuse")
     }
 
     @Test fun bytesHelpers() {

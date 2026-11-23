@@ -88,7 +88,7 @@ enum FaceInstall {
                                       _ body: (StockSession, String) async throws -> T) async throws -> T {
         // the stock session binds the watch: the RPC listener waits it out
         RPCListener.shared.stop()
-        defer { RPCListener.shared.start() }
+        defer { RPCListener.shared.resume() }
         let link = BLELink()
         defer { link.disconnect() }
         let watchdog = Task {

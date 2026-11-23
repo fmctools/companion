@@ -10,6 +10,7 @@ import java.time.temporal.ChronoUnit
 import java.util.Locale
 import org.json.JSONObject
 import tools.fmc.companion.wire.WeatherHour
+import tools.fmc.companion.wire.currentHours
 import tools.fmc.companion.wire.weatherDay
 import tools.fmc.companion.wire.weatherHours
 import tools.fmc.companion.wire.weatherNow
@@ -33,15 +34,15 @@ internal fun forecastRecords(json: JSONObject, fetchedAt: Long, now: ZonedDateTi
     val cur = json.getJSONObject("current")
     val out = mutableListOf(weatherNow(cur.getDouble("temperature_2m"), cur.getInt("weather_code"),
         cur.getDouble("wind_speed_10m"), cur.getInt("relative_humidity_2m"), (now.toInstant().toEpochMilli() - fetchedAt) / 60_000))
-    // the hours from the one that contains now: a cached copy may start an hour back
     json.optJSONObject("hourly")?.let { h ->
         val times = h.getJSONArray("time")
-        val thisHour = now.truncatedTo(ChronoUnit.HOURS)
-        val list = (0 until times.length()).filter { times.getLong(it) >= thisHour.toEpochSecond() }.map {
-            WeatherHour(h.getJSONArray("temperature_2m").getDouble(it), h.getJSONArray("weather_code").getInt(it),
+        val all = (0 until times.length()).map {
+            Instant.ofEpochSecond(times.getLong(it)) to WeatherHour(
+                h.getJSONArray("temperature_2m").getDouble(it), h.getJSONArray("weather_code").getInt(it),
                 h.getJSONArray("precipitation_probability").optInt(it, 0), h.getJSONArray("is_day").optInt(it, 1) == 0)
         }
-        weatherHours(thisHour.hour, list, hours)?.let { out += it }
+        val (hour, list) = currentHours(all, now)
+        weatherHours(hour, list, hours)?.let { out += it }
     }
     val d = json.getJSONObject("daily")
     val today = now.toLocalDate()

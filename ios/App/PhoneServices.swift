@@ -16,7 +16,8 @@ import WireKit
     private var fix: CheckedContinuation<Void, Never>?
     /// rounded coordinate → locality
     private var places: [String: String] = [:]
-    private var cached: (at: Date, now: CurrentWeather, hours: [HourWeather], days: [DayWeather])?
+    /// `located`: from a fresh fix, or one that was asked for. Otherwise only the card reuses it.
+    private var cached: (at: Date, located: Bool, now: CurrentWeather, hours: [HourWeather], days: [DayWeather])?
 
     override init() {
         super.init()
@@ -127,14 +128,40 @@ import WireKit
     }
 
     func weather() async throws -> (now: WeatherNow, hours: WeatherHours?, days: [WeatherDay]) {
-        if cached.map({ -$0.at.timeIntervalSinceNow > 30 * 60 }) ?? true {
-            let loc = try await lastLocation()
-            let (now, hourly, daily) = try await withDeadline(.seconds(6)) {
-                try await WeatherService.shared.weather(for: loc, including: .current, .hourly, .daily)
-            }
-            cached = (.now, now, Array(hourly), Array(daily))
+        try await fetchForecast(locate: true)
+        guard let forecast = forecast() else { throw RPCStatus.unavailable }
+        return forecast
+    }
+
+    /// Weather's card from the same forecast, a stale copy when there's no new one. It never asks for a location
+    /// fix: it runs in the background, so the last known one has to do.
+    func weatherCardRecord() async -> Data? {
+        try? await fetchForecast(locate: false)
+        let time = Date.now // one for both, or they could fall on either side of an hour
+        guard let w = forecast(at: time) else { return nil }
+        let hours = w.hours.flatMap { weatherRecord($0, limit: 4) }
+        return weatherCard([weatherRecord(w.now)] + (hours.map { [$0] } ?? []),
+                           hour: Calendar.current.component(.hour, from: time))
+    }
+
+    private func fetchForecast(locate: Bool) async throws {
+        if let cached, -cached.at.timeIntervalSinceNow <= 30 * 60, cached.located || !locate { return }
+        let loc: CLLocation
+        if locate {
+            loc = try await lastLocation()
+        } else {
+            guard let last = locations.location else { throw RPCStatus.unavailable }
+            loc = last
         }
-        guard let cached else { throw RPCStatus.unavailable }
+        let (now, hourly, daily) = try await withDeadline(.seconds(6)) {
+            try await WeatherService.shared.weather(for: loc, including: .current, .hourly, .daily)
+        }
+        cached = (.now, locate || -loc.timestamp.timeIntervalSinceNow <= 15 * 60, now, Array(hourly), Array(daily))
+    }
+
+    /// The cached forecast as of `time`.
+    private func forecast(at time: Date = .now) -> (now: WeatherNow, hours: WeatherHours?, days: [WeatherDay])? {
+        guard let cached else { return nil }
         let cal = Calendar.current
         let c = cached.now
         let now = WeatherNow(temp: c.temperature.converted(to: .celsius).value, code: wmo(c.condition),
@@ -142,19 +169,17 @@ import WireKit
                              humidity: Int((c.humidity * 100).rounded()),
                              ageMin: Int(-cached.at.timeIntervalSinceNow / 60))
         let days = cached.days.compactMap { d -> WeatherDay? in
-            let day = forecastDay(d.date, now: .now, calendar: cal)
+            let day = forecastDay(d.date, now: time, calendar: cal)
             guard day >= 0 else { return nil }
             return WeatherDay(day: day, min: d.lowTemperature.converted(to: .celsius).value,
                               max: d.highTemperature.converted(to: .celsius).value, code: wmo(d.condition),
                               precip: Int((d.precipitationChance * 100).rounded()))
         }
-        // the hours from the one that contains now: a cached copy may start an hour back
-        let thisHour = cal.dateInterval(of: .hour, for: .now)?.start ?? .now
-        let hours = cached.hours.filter { $0.date >= thisHour }.map {
-            WeatherHour(temp: $0.temperature.converted(to: .celsius).value, code: wmo($0.condition),
-                        precip: Int(($0.precipitationChance * 100).rounded()), night: !$0.isDaylight)
+        let hours = cached.hours.map { h in
+            (start: h.date, hour: WeatherHour(temp: h.temperature.converted(to: .celsius).value, code: wmo(h.condition),
+                                              precip: Int((h.precipitationChance * 100).rounded()), night: !h.isDaylight))
         }
-        return (now, hours.isEmpty ? nil : WeatherHours(hour: cal.component(.hour, from: thisHour), hours: hours), days)
+        return (now, currentHours(hours, now: time, calendar: cal), days)
     }
 
     /// With the user's headers for (package, host) and its cookie jar; neither goes to the watch or the log.

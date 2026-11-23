@@ -116,19 +116,34 @@ private struct OrderVectors: Decodable {
     }
 }
 
-/// push-vectors.json: tools/push-vectors.py, the widget record from the SDK's own install.widget_record.
-private struct PushVectors: Decodable {
+/// push-vectors.json: tools/push-vectors.py, the records from the SDK's own widget_record and columns_record.
+struct PushVectors: Decodable {
     struct W: Decodable { let title: String; let value: String; let hex: String }
     struct P: Decodable { let slot: Int; let kind: Int; let data: String; let hex: String }
     struct R: Decodable { let hex: String; let ok: Bool?; let later_ms: UInt32?; let refused: UInt8? }
     struct B: Decodable { let records: [String]; let blob: String? }
     struct H: Decodable { let records: [String]; let title: String?; let value: String?; let none: Bool? }
+    struct C: Decodable { let caption: String; let icon: Int?; let value: String }
+    struct Columns: Decodable { let note: String; let columns: [C]; let hex: String }
+    struct Damage: Decodable { let note: String; let flip: Int?; let keep: Int? }
+    struct Trailer: Decodable { let stub: UInt32; let package: String; let plain: String; let damaged: [Damage] }
+    let trailer: Trailer
+    struct Card: Decodable {
+        let note: String; let at: String; let start: String
+        let now: [Double]?; let hours: [[Double]]; let hex: String?
+    }
+    let weather_icons: [[Int]]; let weather_cards: [Card]
     let command: Int; let widget: [W]; let payload: [P]; let replies: [R]; let blob: [B]; let http_widget: [H]
+    let columns_stub: UInt32; let columns: [Columns]; let columns_bad: [[C]]
+
+    static func load() throws -> PushVectors {
+        let url = try #require(Bundle.module.url(forResource: "push-vectors", withExtension: "json"))
+        return try JSONDecoder().decode(PushVectors.self, from: Data(contentsOf: url))
+    }
 }
 
 @Test func pushMatchesSDK() throws {
-    let url = try #require(Bundle.module.url(forResource: "push-vectors", withExtension: "json"))
-    let p = try JSONDecoder().decode(PushVectors.self, from: Data(contentsOf: url))
+    let p = try PushVectors.load()
     #expect(p.command == Int(Cmd.push))
     for w in p.widget { #expect(widgetRecord(title: w.title, value: w.value) == hex(w.hex), "\(w.title)") }
     for c in p.payload { #expect(pushPayload(slot: c.slot, kind: PushKind(rawValue: c.kind)!, data: hex(c.data)) == hex(c.hex)) }
@@ -141,4 +156,54 @@ private struct PushVectors: Decodable {
         #expect(jobWidget(h.records.map(hex)) == (h.none == true ? nil : widgetRecord(title: h.title!, value: h.value!)))
     }
     #expect([6, 7, 8].map { canPush(stub: $0) } == [false, false, true])
+}
+
+@Test func columnsMatchSDK() throws {
+    let p = try PushVectors.load()
+    func columns(_ c: [PushVectors.C]) -> [WidgetColumn] {
+        c.map { WidgetColumn(caption: $0.caption, icon: $0.icon, value: $0.value) }
+    }
+    for c in p.columns { #expect(columnsRecord(columns(c.columns)) == hex(c.hex), "\(c.note)") }
+    for c in p.columns_bad { #expect(columnsRecord(columns(c)) == nil) }
+    #expect(!canPushColumns(stub: p.columns_stub - 1) && canPushColumns(stub: p.columns_stub))
+    #expect(p.columns_stub == 10 && !canPushColumns(stub: 9), "stub 9, the face guard, refuses v2")
+}
+
+/// What the watch receives for `file` from a phone that sees `stub`: the DATA payloads joined, and BEGIN's size and CRC
+/// must be of those bytes.
+private func sent(_ file: Data, stub: UInt32) async throws -> Data {
+    let f = FakeInstaller()
+    if stub > 1 {
+        f.stub = Data([0])
+        f.stub.le(stub)
+        f.stub.append(4)
+    }
+    nonisolated(unsafe) var seen: [Double] = []
+    _ = try await install(f, package: file) { seen.append($0) }
+    let got = f.calls.filter { $0.0 == Cmd.data }.reduce(into: Data()) { $0 += $1.1.dropFirst(4) }
+    let begin = try #require(f.calls.first { $0.0 == Cmd.begin }?.1)
+    #expect(begin.le(UInt32.self, at: 1) == UInt32(got.count) && begin.le(UInt32.self, at: 5) == crc32(got))
+    #expect(seen.last == 1)
+    return got
+}
+
+@Test func widgetIconTrailer() async throws {
+    let t = try PushVectors.load().trailer
+    let packed = hex(t.package), plain = hex(t.plain)
+    #expect(parseHeader(packed) == parseHeader(plain) && parseHeader(packed)?.name == "weather")
+    #expect(t.stub == 10, "stub 9, the face guard, refuses extra bytes at END")
+    for stub: UInt32 in [1, 7, 9, t.stub - 1] {
+        #expect(try await sent(packed, stub: stub) == plain, "stub \(stub): the package without icons, byte for byte")
+    }
+    for stub in [t.stub, t.stub + 1] { #expect(try await sent(packed, stub: stub) == packed, "stub \(stub): whole") }
+    for stub in [1, t.stub] { #expect(try await sent(plain, stub: stub) == plain, "no trailer: as it is") }
+    for d in t.damaged {
+        var bad = [UInt8](packed.prefix(d.keep ?? packed.count))
+        if let i = d.flip { bad[i] ^= 0xFF }
+        #expect(try await sent(Data(bad), stub: t.stub - 1) == plain, "\(d.note): an older stub never sees it")
+        #expect(try await sent(Data(bad), stub: t.stub) == Data(bad), "\(d.note): stub 10 checks it itself")
+    }
+    var huge = [UInt8](packed)
+    huge.replaceSubrange(44..<48, with: [0xFF, 0xFF, 0xFF, 0xFF])
+    #expect(stripTrailer(Data(huge)) == Data(huge), "a size past the file is left for the stub to refuse")
 }

@@ -40,3 +40,17 @@ final class FakeClock: @unchecked Sendable {
     #expect(!recheckDue(idle: false, busy: false, last: t - 10, now: t))
     #expect(recheckDue(idle: false, busy: false, last: t - 30, now: t))
 }
+
+@Test func watchHoldsOverlap() {
+    var h = WatchHolds()
+    #expect(h.free, "nothing has the watch: a check may start the listener")
+    h.take() // the firmware
+    h.take() // a read of the faces meanwhile
+    h.release()
+    #expect(!h.free, "the second one ending doesn't start the listener under the firmware")
+    h.release()
+    #expect(h.free)
+    h.release()
+    h.take()
+    #expect(!h.free, "a release too many doesn't eat the next hold")
+}

@@ -1,9 +1,11 @@
 import Foundation
 
 // PUSH (stub 8, cmf-watch-sdk docs/widget-push.md): the phone writes a watch app's widget card or start blob while
-// the app doesn't run. Used for its background jobs (docs/miniapp-rpc.md, job.set).
+// the app doesn't run. Used for its background jobs (docs/miniapp-rpc.md, job.set) and, from stub 10, for Weather's
+// columns card (WeatherCard.swift).
 
-/// What a PUSH writes: the widget card's 64-byte record, or the blob the app gets as its first message at start.
+/// What a PUSH writes: the widget card's record (64 bytes; from stub 10 also v2, up to 128), or the blob the app gets
+/// as its first message at start.
 public enum PushKind: Int, Codable, Sendable { case widget = 0, blob = 1 }
 
 public enum PushResult: Equatable, Sendable {
@@ -19,11 +21,36 @@ public func canPush(stub: UInt32) -> Bool { stub >= 8 }
 
 /// title ≤ 23 bytes at 0, value ≤ 39 bytes at 24 (0A starts a second line), NUL-padded to 64.
 public func widgetRecord(title: String, value: String) -> Data {
-    func field(_ s: String, _ size: Int) -> Data {
-        let d = utf8Cut(s, size - 1)
-        return d + Data(count: size - d.count)
+    field(title, 24) + field(value, 40)
+}
+
+/// One column of a v2 `columns` record. `icon` indexes the package's widget icons, nil none.
+public struct WidgetColumn: Equatable, Sendable {
+    public var caption: String, icon: Int?, value: String
+    public init(caption: String, icon: Int?, value: String) { (self.caption, self.icon, self.value) = (caption, icon, value) }
+}
+
+/// From stub 10 on: v2 records. An older stub answers BadRequest.
+public func canPushColumns(stub: UInt32) -> Bool { stub >= 10 }
+
+/// The v2 record the stub draws as columns: `FF 01 n`, then per column `caption[10] ‖ icon:u8 ‖ value[10]`
+/// (install.columns_record). nil for other than 1…4 columns or an icon outside 0…15.
+public func columnsRecord(_ columns: [WidgetColumn]) -> Data? {
+    guard (1...4).contains(columns.count) else { return nil }
+    var d = Data([0xFF, 1, UInt8(columns.count)])
+    for c in columns {
+        if let i = c.icon, !(0...15).contains(i) { return nil }
+        d += field(c.caption, 10)
+        d.append(c.icon.map { UInt8($0) } ?? 0xFF)
+        d += field(c.value, 10)
     }
-    return field(title, 24) + field(value, 40)
+    return d
+}
+
+/// UTF-8 cut to leave a NUL, NUL-padded to `size`.
+private func field(_ s: String, _ size: Int) -> Data {
+    let d = utf8Cut(s, size - 1)
+    return d + Data(count: size - d.count)
 }
 
 public func pushPayload(slot: Int, kind: PushKind, data: Data) -> Data { Data([UInt8(slot), UInt8(kind.rawValue)]) + data }

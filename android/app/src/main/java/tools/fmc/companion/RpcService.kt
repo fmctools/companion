@@ -16,15 +16,26 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.withLock
+import java.time.ZonedDateTime
+import java.time.temporal.ChronoUnit
 import tools.fmc.companion.wire.Cmd
 import tools.fmc.companion.wire.KSession
 import tools.fmc.companion.wire.Status
 import tools.fmc.companion.wire.WireError
 import kotlinx.coroutines.withTimeoutOrNull
+import tools.fmc.companion.wire.CardSchedule
+import tools.fmc.companion.wire.InstallError
 import tools.fmc.companion.wire.LOADER_SLOT
+import tools.fmc.companion.wire.PushKind
+import tools.fmc.companion.wire.WEATHER_PACKAGE
+import tools.fmc.companion.wire.canPushColumns
+import tools.fmc.companion.wire.weatherCardSlot
 import tools.fmc.companion.wire.PushResult
 import tools.fmc.companion.wire.RefreshJob
 import tools.fmc.companion.wire.appSlots
@@ -86,11 +97,13 @@ class RpcService : Service() {
             try {
                 link.connect()
                 val account = "k-${link.watchId}"
-                val session = try {
-                    KSession.open(link, store[account] ?: throw WireError.Timeout("no cached K")).first
-                } catch (e: WireError) {
-                    // K changes with a factory reset: read it again
-                    KSession.open(link).also { store[account] = it.second }.first
+                val session = kLock.withLock {
+                    try {
+                        KSession.open(link, store[account] ?: throw WireError.Timeout("no cached K")).first
+                    } catch (e: WireError) {
+                        // K changes with a factory reset: read it again
+                        KSession.open(link).also { store[account] = it.second }.first
+                    }
                 }
                 Log.i(TAG, "listening")
                 DevLog.log(this, "listening")
@@ -114,21 +127,23 @@ class RpcService : Service() {
         // an app installed into a used slot while this runs keeps the old name until the next reconnect.
         val names = mutableMapOf<Int, String>()
         val push = PushTarget()
+        val card = CardSchedule()
         while (true) {
             runDueJobs(s, phone, push)
+            refreshWeatherCard(s, phone, push, card)
             val (slot, m) = try {
                 s.recvFrom(60_000)
             } catch (_: WireError.Timeout) {
-                s.ping() // registers again (a rebooted watch forgets us) and throws on a dead link
+                kLock.withLock { s.ping() } // registers again (a rebooted watch forgets us) and throws on a dead link
                 continue
             }
             if (parseRequest(m) == null) continue
-            val pkg = names[slot] ?: packageIn(s, slot)?.also { names[slot] = it } ?: continue
+            val pkg = names[slot] ?: kLock.withLock { packageIn(s, slot) }?.also { names[slot] = it } ?: continue
             // empty: a part of http.request before its last
             val replies = answer(pkg, m, phone)?.takeIf { it.isNotEmpty() } ?: continue
             val line = DevLog.request(pkg, m, replies)
             try {
-                for (r in replies) s.send(r)
+                kLock.withLock { for (r in replies) s.send(r) }
                 DevLog.log(this, "$line, ${replies.size} msg")
             } catch (e: WireError) {
                 Log.w(TAG, "reply to $pkg: ${e.message}") // the app closed meanwhile
@@ -152,33 +167,82 @@ class RpcService : Service() {
                 DevLog.log(this, "$pkg job ${j.id}: ${e.message}")
                 continue
             }
-            deliverJob(s, pkg, j, records, push, now)
+            kLock.withLock { deliverJob(s, pkg, j, records, push, now) }
         }
     }
 
     /** The stub's version and the apps' slots, read once per session for PUSH. */
     private class PushTarget {
-        var stub: Long? = null
-        var slots: Map<String, Int>? = null
+        private var stub: Long? = null
+        private var apps: Map<Int, String>? = null
+
+        suspend fun stub(s: KSession) = stub ?: stubVersion(s).also { stub = it }
+
+        suspend fun apps(s: KSession) = apps ?: installed(s, appSlots(stub(s))).filterKeys { it != LOADER_SLOT }
+            .mapValues { it.value.name }.also { apps = it }
+
+        /** Moved or removed: read the slots again next time. */
+        fun forgetApps() {
+            apps = null
+        }
     }
 
     /** Writes a job's records to the app's widget card or start blob (PUSH, stub 8, cmf-watch-sdk docs/widget-push.md). */
     private suspend fun deliverJob(s: KSession, pkg: String, job: RefreshJob, records: List<ByteArray>, t: PushTarget, now: Long) {
         val line = "$pkg job ${job.id}"
         val data = job.pushData(records) ?: return DevLog.log(this, "$line: nothing to push (${records.size} records)")
-        val stub = t.stub ?: stubVersion(s).also { t.stub = it }
+        val stub = t.stub(s)
         if (!canPush(stub)) return DevLog.log(this, "$line: stub $stub takes no PUSH (8+)")
-        val slots = t.slots ?: installed(s, appSlots(stub)).filterKeys { it != LOADER_SLOT }.entries
-            .associate { it.value.name to it.key }.also { t.slots = it }
-        val slot = slots[pkg] ?: return DevLog.log(this, "$line: not on the watch")
+        val slot = t.apps(s).entries.firstOrNull { it.value == pkg }?.key ?: return DevLog.log(this, "$line: not on the watch")
         when (val r = push(s, slot, job.target, data)) {
             PushResult.Ok -> DevLog.log(this, "$line: pushed to slot $slot")
             // due again once the watch takes a write for this slot
             is PushResult.Later -> Jobs(this).ran(pkg, job.id, now + r.ms - job.minutes * 60_000L)
             is PushResult.Refused -> {
-                if (r.status == Status.NO_APP.code) t.slots = null // moved or removed: read the slots again next time
+                if (r.status == Status.NO_APP.code) t.forgetApps()
                 DevLog.log(this, "$line: push refused (${r.status})")
             }
+        }
+    }
+
+    /**
+     * Weather's widget card (docs/miniapp-rpc.md, "Weather's card"): on connect and when the hour changes, seen at most
+     * a minute late. No prompt and no location fix; nothing at all goes to the watch without the grant, and the slots
+     * are read once per session (INFO drops an install another host has open).
+     */
+    private suspend fun refreshWeatherCard(s: KSession, phone: PhoneServices, t: PushTarget, card: CardSchedule) {
+        val clock = ZonedDateTime.now()
+        val hour = clock.truncatedTo(ChronoUnit.HOURS).toInstant().toEpochMilli()
+        fun granted() = phone.grants(WEATHER_PACKAGE)["weather"] == true && phone.osAllows("weather")
+        if (!card.due(hour, clock.toInstant().toEpochMilli()) || WatchLink.busy || !granted()) return
+        try {
+            val slot = kLock.withLock {
+                if (WatchLink.busy) return
+                val stub = t.stub(s)
+                if (!canPushColumns(stub)) return
+                weatherCardSlot(stub, t.apps(s), true) ?: return
+            }
+            val data = withTimeoutOrNull(10_000) { phone.weatherCardRecord() }
+            if (data == null) {
+                card.settle(null, null, hour, System.currentTimeMillis())
+                return DevLog.log(this, "weather card: no forecast")
+            }
+            if (card.unchanged(data, hour)) return
+            val result = kLock.withLock {
+                // the fetch took a while: an install may have begun, the grant may be gone
+                currentCoroutineContext().ensureActive()
+                if (WatchLink.busy || !granted()) return
+                push(s, slot, PushKind.WIDGET, data)
+            }
+            card.settle(result, data, hour, System.currentTimeMillis())
+            if (result is PushResult.Refused && result.status == Status.NO_APP.code) t.forgetApps()
+            DevLog.log(this, "weather card to slot $slot: $result")
+        } catch (e: WireError) {
+            card.settle(null, null, hour, System.currentTimeMillis())
+            DevLog.log(this, "weather card: ${e.message}")
+        } catch (e: InstallError) { // the slots couldn't be read
+            card.settle(null, null, hour, System.currentTimeMillis())
+            DevLog.log(this, "weather card: ${e.message}")
         }
     }
 

@@ -1,9 +1,11 @@
 package tools.fmc.companion.wire
 
 // PUSH (stub 8, cmf-watch-sdk docs/widget-push.md): the phone writes a watch app's widget card or start blob while
-// the app doesn't run. Used for its background jobs (docs/miniapp-rpc.md, job.set). Port of WireKit Push.swift.
+// the app doesn't run. Used for its background jobs (docs/miniapp-rpc.md, job.set) and, from stub 10, for Weather's
+// columns card (WeatherCard.kt). Port of WireKit Push.swift.
 
-/** What a PUSH writes: the widget card's 64-byte record, or the blob the app gets as its first message at start. */
+/** What a PUSH writes: the widget card's record (64 bytes; from stub 10 also v2, up to 128), or the blob the app gets
+ *  as its first message at start. */
 object PushKind {
     const val WIDGET = 0
     const val BLOB = 1
@@ -22,6 +24,22 @@ fun canPush(stub: Long) = stub >= 8
 
 /** title ≤ 23 bytes at 0, value ≤ 39 bytes at 24 (0A starts a second line), NUL-padded to 64. */
 fun widgetRecord(title: String, value: String): ByteArray = utf8Cut(title, 23).copyOf(24) + utf8Cut(value, 39).copyOf(40)
+
+/** One column of a v2 `columns` record. [icon] indexes the package's widget icons, null none. */
+data class WidgetColumn(val caption: String, val icon: Int?, val value: String)
+
+/** From stub 10 on: v2 records. An older stub answers BadRequest. */
+fun canPushColumns(stub: Long) = stub >= 10
+
+/** The v2 record the stub draws as columns: `FF 01 n`, then per column `caption[10] ‖ icon:u8 ‖ value[10]`
+ *  (install.columns_record). null for other than 1..4 columns or an icon outside 0..15. */
+fun columnsRecord(columns: List<WidgetColumn>): ByteArray? {
+    if (columns.size !in 1..4 || columns.any { it.icon != null && it.icon !in 0..15 }) return null
+    return buf {
+        u8(0xFF); u8(1); u8(columns.size)
+        for (c in columns) { add(utf8Cut(c.caption, 9).copyOf(10)); u8(c.icon ?: 0xFF); add(utf8Cut(c.value, 9).copyOf(10)) }
+    }
+}
 
 fun pushPayload(slot: Int, kind: Int, data: ByteArray): ByteArray = bytes(slot, kind) + data
 
