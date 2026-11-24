@@ -119,6 +119,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -167,6 +168,7 @@ class Nav {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun App(model: AppModel, nav: Nav) {
+    val saveableStateHolder = rememberSaveableStateHolder()
     BackHandler(nav.face != null || nav.signingIn || nav.app != null || nav.developer || nav.firmware || nav.rescue) {
         when {
             nav.signingIn -> nav.signingIn = false
@@ -195,17 +197,31 @@ fun App(model: AppModel, nav: Nav) {
         },
     ) { pad ->
         Column(Modifier.padding(pad)) {
-            when {
-                nav.signingIn -> SignInScreen(model) { nav.signingIn = false }
-                nav.app != null -> AppScreen(model, nav.app!!, { nav.app = it }) { nav.app = null }
-                nav.developer -> DeveloperScreen { nav.developer = false }
-                nav.firmware -> FirmwareScreen(model) { nav.firmware = false }
-                nav.rescue -> RescueScreen(model.store) { nav.rescue = false }
-                nav.face?.startsWith("user:") == true -> AuthorScreen(model, nav.face!!.removePrefix("user:"), { nav.face = it }) { nav.face = null }
-                nav.face != null -> FaceScreen(model, nav.face!!, { nav.face = "user:$it" }) { nav.face = null }
-                nav.tab == 0 -> CatalogScreen(model) { nav.face = it }
-                nav.tab == 2 -> AppsScreen(model) { nav.app = it }
-                else -> WatchScreen(model, nav) { nav.signingIn = true }
+            val key = when {
+                nav.signingIn -> "signin"
+                nav.app != null -> "app:${nav.app}"
+                nav.developer -> "developer"
+                nav.firmware -> "firmware"
+                nav.rescue -> "rescue"
+                nav.face?.startsWith("user:") == true -> "author:${nav.face}"
+                nav.face != null -> "face:${nav.face}"
+                nav.tab == 0 -> "catalog"
+                nav.tab == 2 -> "apps"
+                else -> "watch"
+            }
+            saveableStateHolder.SaveableStateProvider(key) {
+                when {
+                    nav.signingIn -> SignInScreen(model) { nav.signingIn = false }
+                    nav.app != null -> AppScreen(model, nav.app!!, { nav.app = it }) { nav.app = null }
+                    nav.developer -> DeveloperScreen { nav.developer = false }
+                    nav.firmware -> FirmwareScreen(model) { nav.firmware = false }
+                    nav.rescue -> RescueScreen(model.store) { nav.rescue = false }
+                    nav.face?.startsWith("user:") == true -> AuthorScreen(model, nav.face!!.removePrefix("user:"), { nav.face = it }) { nav.face = null }
+                    nav.face != null -> FaceScreen(model, nav.face!!, { nav.face = "user:$it" }) { nav.face = null }
+                    nav.tab == 0 -> CatalogScreen(model) { nav.face = it }
+                    nav.tab == 2 -> AppsScreen(model) { nav.app = it }
+                    else -> WatchScreen(model, nav) { nav.signingIn = true }
+                }
             }
         }
     }
@@ -253,13 +269,16 @@ fun CatalogScreen(model: AppModel, open: (String) -> Unit) {
     val showMine = signedIn && shelf == 2
     val q = query.trim()
     val wanted = CatalogQuery(if (signedIn) Shelf.entries[shelf] else Shelf.All, CatalogSort.entries[sort], q, model.user?.id)
+    val grid = rememberLazyGridState()
     LaunchedEffect(wanted) {
         // typing: the server is asked once the user pauses, not per letter
-        if (wanted.search != model.query.search) delay(350)
+        val searchChanged = wanted.search != model.query.search
+        val queryChanged = wanted != model.query
+        if (searchChanged) delay(350)
         model.show(wanted)
+        if (queryChanged) grid.scrollToItem(0)
     }
     val shown = model.faces
-    val grid = rememberLazyGridState()
     // the next page when the last cells come into view
     val nearEnd by remember { derivedStateOf {
         val last = grid.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
@@ -349,13 +368,14 @@ fun AuthorScreen(model: AppModel, id: String, open: (String) -> Unit, back: () -
     var faces by remember(id) { mutableStateOf<List<Watchface>>(emptyList()) }
     LaunchedEffect(id) { runCatching { model.author(id) }.onSuccess { faces = it } }
     val first = faces.firstOrNull()
+    val grid = rememberLazyGridState()
     Column {
         Bar(first?.author ?: "", back) {
             IconButton({ context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("$FMC/user/$id"))) }) {
                 Icon(painterResource(R.drawable.ic_open_in_new), stringResource(R.string.open_on_fmc))
             }
         }
-        LazyVerticalGrid(GridCells.Adaptive(150.dp), Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp),
+        LazyVerticalGrid(GridCells.Adaptive(150.dp), Modifier.fillMaxSize(), state = grid, contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             item(span = { GridItemSpan(maxLineSpan) }) {
                 Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally,
